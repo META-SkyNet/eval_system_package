@@ -28,34 +28,56 @@ eval_system_package/
 ├── spec/
 │   ├── data-model.md                  # Đặc tả data model (entities + relationships)
 │   ├── api-specification.md           # REST API contract đầy đủ
-│   └── business-rules.md              # Quy tắc nghiệp vụ, tính điểm, validation
+│   ├── business-rules.md              # Quy tắc nghiệp vụ, tính điểm, validation
+│   └── schema.sql                     # PostgreSQL DDL đầy đủ (ready to run)
 └── artifacts/
     ├── evaluation_template_system.jsx # Artifact chính: Template + Sự vụ + Work Logs + Scorecard
     └── api_integration_design.jsx     # Artifact API: Endpoints + Playground + Logs + Security
 ```
 
+### Docs — Triết lý & Thiết kế
+
+| File | Nội dung |
+|------|----------|
+| [01 — Triết lý & Khung 3 Trụ Cột](docs/01-triet-ly-va-khung-danh-gia.md) | Why của hệ thống, 3 pillars cố định |
+| [02 — Template & Versioning](docs/02-template-va-versioning.md) | Cách template hoạt động, version lifecycle |
+| [03 — Sự vụ & Ghi nhận](docs/03-su-vu-va-ghi-nhan.md) | Module incidents, event categories, trạng thái |
+| [04 — Khái quát hóa Công việc](docs/04-khai-quat-hoa-cong-viec.md) | Work Unit catalog, điểm công, đa phòng ban |
+| [05 — Tích hợp CRM/ERP](docs/05-tich-hop-crm-erp.md) | Side-by-side integration pattern |
+| [06 — Campaign & Peer Recognition](docs/06-campaign-kich-hoat-tinh-than.md) | Event-based motivation, giới hạn đạo đức |
+
+### Spec — Kỹ thuật
+
+| File | Nội dung |
+|------|----------|
+| [data-model.md](spec/data-model.md) | Entities, relationships, constraints, scoring formula |
+| [api-specification.md](spec/api-specification.md) | REST API contract, request/response, error codes |
+| [business-rules.md](spec/business-rules.md) | Idempotency, event lifecycle, validation, DLQ |
+| [schema.sql](spec/schema.sql) | PostgreSQL DDL — chạy trực tiếp để tạo database |
+
 ## Đọc gì trước?
 
 **Nếu bạn là Product Owner / Quản lý:**
-1. `docs/01-triet-ly-va-khung-danh-gia.md` — hiểu why
-2. `docs/04-khai-quat-hoa-cong-viec.md` — hiểu cách mô hình hóa công việc đặc thù
-3. `docs/06-campaign-kich-hoat-tinh-than.md` — hiểu cách kích hoạt tinh thần đội ngũ theo dịp
-4. Chạy artifact `artifacts/evaluation_template_system.jsx` để thấy UI
+1. [Triết lý & Khung 3 Trụ Cột](docs/01-triet-ly-va-khung-danh-gia.md) — hiểu why
+2. [Khái quát hóa Công việc](docs/04-khai-quat-hoa-cong-viec.md) — hiểu cách mô hình hóa công việc đặc thù
+3. [Campaign & Peer Recognition](docs/06-campaign-kich-hoat-tinh-than.md) — hiểu cách kích hoạt tinh thần đội ngũ theo dịp
+4. Chạy artifact [`artifacts/evaluation_template_system.jsx`](artifacts/evaluation_template_system.jsx) để thấy UI
 
 **Nếu bạn là Developer Backend:**
-1. `spec/data-model.md` — entities, relationships, fields
-2. `spec/api-specification.md` — 4 endpoints cần implement
-3. `spec/business-rules.md` — logic tính điểm, validation, idempotency
-4. Chạy artifact `artifacts/api_integration_design.jsx` để thấy contract + playground
+1. [data-model.md](spec/data-model.md) — entities, relationships, fields
+2. [api-specification.md](spec/api-specification.md) — endpoints cần implement
+3. [business-rules.md](spec/business-rules.md) — logic tính điểm, validation, idempotency
+4. [schema.sql](spec/schema.sql) — PostgreSQL DDL, chạy trực tiếp
+5. Chạy artifact [`artifacts/api_integration_design.jsx`](artifacts/api_integration_design.jsx) để thấy contract + playground
 
 **Nếu bạn là Developer Frontend:**
-1. Hai artifact JSX trong `artifacts/` là reference implementation
-2. `docs/02-template-va-versioning.md` + `docs/03-su-vu-va-ghi-nhan.md` cho logic UI
+1. Hai artifact JSX trong `artifacts/` là reference implementation: [`evaluation_template_system.jsx`](artifacts/evaluation_template_system.jsx), [`api_integration_design.jsx`](artifacts/api_integration_design.jsx)
+2. [Template & Versioning](docs/02-template-va-versioning.md) + [Sự vụ & Ghi nhận](docs/03-su-vu-va-ghi-nhan.md) cho logic UI
 
 **Nếu bạn là Integration Engineer (phía CRM/ERP):**
-1. `docs/05-tich-hop-crm-erp.md` — tổng quan side-by-side
-2. `spec/api-specification.md` — contract đầy đủ
-3. Chạy artifact `artifacts/api_integration_design.jsx` để test payload
+1. [Tích hợp CRM/ERP](docs/05-tich-hop-crm-erp.md) — tổng quan side-by-side
+2. [api-specification.md](spec/api-specification.md) — contract đầy đủ
+3. Chạy artifact [`artifacts/api_integration_design.jsx`](artifacts/api_integration_design.jsx) để test payload
 
 ## Kiến trúc tổng quan
 
@@ -93,15 +115,16 @@ Hệ thống 3 trụ cột chạy ổn định tháng/quý, nhưng thiếu cao t
 - **Reward tách biệt** khỏi lương cơ bản — chỉ là "gia vị", không phải "bữa chính"
 - Tận dụng dữ liệu sẵn có (work logs, events), không cần nhập liệu thêm
 
-5 loại campaign: Team Goal, Individual Awards, Recognition Week, Milestone Celebration, Skill Challenge. Xem chi tiết ở `docs/06-campaign-kich-hoat-tinh-than.md`.
+5 loại campaign: Team Goal, Individual Awards, Recognition Week, Milestone Celebration, Skill Challenge. Xem chi tiết ở [docs/06-campaign-kich-hoat-tinh-than.md](docs/06-campaign-kich-hoat-tinh-than.md).
 
 ## Quick start cho developer
 
-1. Đọc `spec/data-model.md` để hiểu entities
-2. Cài stack (Node/Python/Go/... tuỳ chọn), tạo schema theo `spec/data-model.md`
-3. Implement 4 endpoints theo `spec/api-specification.md`
-4. Frontend: dùng 2 artifact JSX làm reference, hoặc build lại theo ý muốn
-5. Test integration bằng playground trong `artifacts/api_integration_design.jsx`
+1. Đọc [data-model.md](spec/data-model.md) để hiểu entities
+2. Cài stack (Node/Python/Go/... tuỳ chọn), chạy [schema.sql](spec/schema.sql) để tạo database
+3. Implement endpoints theo [api-specification.md](spec/api-specification.md)
+4. Áp dụng logic từ [business-rules.md](spec/business-rules.md) — idempotency, scoring, validation
+5. Frontend: dùng 2 artifact JSX làm reference, hoặc build lại theo ý muốn
+6. Test integration bằng playground trong [`artifacts/api_integration_design.jsx`](artifacts/api_integration_design.jsx)
 
 ## Nguyên tắc không được phá vỡ
 

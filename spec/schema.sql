@@ -40,6 +40,40 @@ CREATE INDEX idx_employees_department_id ON employees(department_id);
 CREATE INDEX idx_employees_active ON employees(active) WHERE active = TRUE;
 
 -- =============================================================================
+-- PILLAR LIBRARY (Standard Pillar Definitions — dùng chung toàn org)
+-- =============================================================================
+
+CREATE TABLE pillar_library (
+  id                      TEXT PRIMARY KEY,  -- "QUANTITATIVE", "QUALITY_360", ...
+  name                    TEXT NOT NULL,
+  description             TEXT,
+  data_source             TEXT NOT NULL
+                          CHECK (data_source IN (
+                            'quantitative',    -- Tính từ work_logs
+                            'qualitative_360', -- Thu thập qua form 360°
+                            'event_driven',    -- Tính từ events confirmed
+                            'manual'           -- QL nhập trực tiếp mỗi kỳ
+                          )),
+  default_weight          INTEGER NOT NULL DEFAULT 0 CHECK (default_weight BETWEEN 0 AND 100),
+  allowed_question_types  TEXT[] NOT NULL DEFAULT '{}',
+  is_standard             BOOLEAN NOT NULL DEFAULT FALSE,  -- TRUE = thuộc default set
+  active                  BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by              TEXT NOT NULL DEFAULT 'system',
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed: Standard Pillar Library
+INSERT INTO pillar_library (id, name, description, data_source, default_weight, allowed_question_types, is_standard) VALUES
+  ('QUANTITATIVE',  'Kết quả định lượng',          'Những con số đo được, đếm được từ work logs',            'quantitative',    50, ARRAY['work_points','work_count','work_quality'], TRUE),
+  ('QUALITY_360',   'Chất lượng & Thái độ',         'Đánh giá chéo 360°: tay nghề, chăm chỉ, hợp tác',       'qualitative_360', 30, ARRAY['scale','yesno'], TRUE),
+  ('FEEDBACK',      'Phản hồi & Sự cố',             'Tín hiệu từ bên ngoài: khen, phàn nàn, sự cố',          'event_driven',    20, ARRAY['event','scale'], TRUE),
+  ('SKILL_MASTERY', 'Năng lực chuyên môn',           'Tay nghề kỹ thuật, kiến thức chuyên sâu',               'qualitative_360',  0, ARRAY['scale','yesno'], FALSE),
+  ('COMPLIANCE',    'Tuân thủ quy trình & An toàn', 'Checklist an toàn, quy trình, audit',                    'event_driven',     0, ARRAY['event','yesno'], FALSE),
+  ('LEARNING',      'Đào tạo & Phát triển',          'Học kỹ năng mới, hoàn thành khóa học, mentoring',       'manual',           0, ARRAY['scale','yesno'], FALSE),
+  ('INNOVATION',    'Sáng kiến & Cải tiến',          'Đề xuất cải tiến quy trình, giải pháp mới, ý tưởng',    'event_driven',     0, ARRAY['event','scale'], FALSE)
+ON CONFLICT DO NOTHING;
+
+-- =============================================================================
 -- TEMPLATES & VERSIONS
 -- =============================================================================
 
@@ -56,11 +90,12 @@ CREATE TABLE templates (
 CREATE INDEX idx_templates_department_id ON templates(department_id);
 
 -- Pillars và questions được lưu dưới dạng JSONB vì không query trực tiếp
--- Schema JSONB của pillars:
+-- Schema JSONB của pillars (2-6 items):
 -- [
 --   {
 --     "id": "p1",
---     "type": "quantitative" | "qualitative" | "feedback",
+--     "definition_id": "QUANTITATIVE",   -- FK → pillar_library.id
+--     "name_override": null,             -- Tùy chọn: tên riêng của phòng
 --     "weight": 50,
 --     "questions": [
 --       {
@@ -74,6 +109,8 @@ CREATE INDEX idx_templates_department_id ON templates(department_id);
 --     ]
 --   }
 -- ]
+-- Constraint validate: 2 <= array_length(pillars) <= 6
+-- Constraint validate: Σ pillar.weight = 100 (enforced at application layer khi publish)
 
 CREATE TABLE versions (
   id              TEXT PRIMARY KEY DEFAULT ('ver_' || substr(gen_random_uuid()::text, 1, 8)),

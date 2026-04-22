@@ -3,11 +3,16 @@
 ## Entity Relationship Overview
 
 ```
+Organization
+    │
+    └──N PillarDefinition  (library dùng chung toàn tổ chức)
+           │ referenced by
+           ▼
 Department 1───N Employee
     │
     │ 1
     │
-    ├──N Template 1───N Version 1───N Pillar 1───N Question
+    ├──N Template 1───N Version 1───N Pillar (ref PillarDefinition) 1───N Question
     │
     └──1 WorkCatalog 1───N WorkUnitType 1───N WorkLog N───1 Employee
                                                 │
@@ -51,6 +56,48 @@ type Employee = {
 - `externalId` UNIQUE
 - `(externalId)` là khoá dùng trong API calls từ CRM
 - Khi NV nghỉ việc: `active = false`, không xoá record (giữ lịch sử)
+
+### PillarDefinition (Standard Pillar Library)
+
+Bộ định nghĩa trụ cột dùng chung toàn tổ chức. Template mỗi phòng *chọn* từ library này, không tự đặt tên mới.
+
+```typescript
+type PillarDefinition = {
+  id: string;                    // "QUANTITATIVE", "QUALITY_360", "FEEDBACK", ...
+  name: string;                  // "Kết quả định lượng"
+  description: string;
+  data_source: "quantitative"    // Tính từ work_logs
+             | "qualitative_360" // Thu thập qua form 360°
+             | "event_driven"    // Tính từ events confirmed
+             | "manual";         // QL nhập trực tiếp mỗi kỳ
+
+  default_weight: number;        // Gợi ý weight khi thêm vào template (0-100)
+  allowed_question_types: QuestionType[];
+  is_standard: boolean;          // true = thuộc bộ default 3 trụ cột
+  active: boolean;
+  created_by: string;            // "system" hoặc user ID (ai thêm vào library)
+  created_at: ISO8601;
+};
+```
+
+**Standard library (seed mặc định):**
+
+| id | name | data_source | is_standard |
+|----|------|-------------|-------------|
+| `QUANTITATIVE` | Kết quả định lượng | `quantitative` | ✓ |
+| `QUALITY_360` | Chất lượng & Thái độ | `qualitative_360` | ✓ |
+| `FEEDBACK` | Phản hồi & Sự cố | `event_driven` | ✓ |
+| `SKILL_MASTERY` | Năng lực chuyên môn | `qualitative_360` | |
+| `COMPLIANCE` | Tuân thủ quy trình & An toàn | `event_driven` | |
+| `LEARNING` | Đào tạo & Phát triển | `manual` | |
+| `INNOVATION` | Sáng kiến & Cải tiến | `event_driven` | |
+
+**Constraints:**
+- Chỉ admin / HR có thể thêm PillarDefinition mới vào library
+- Xoá pillar definition không được nếu đã có Version đang dùng nó
+- `id` là stable identifier — không đổi một khi đã publish
+
+---
 
 ### Template
 
@@ -96,17 +143,21 @@ type Version = {
 
 ```typescript
 type Pillar = {
-  id: string;                   // "p1", "p2", "p3" (trong context của version)
-  type: "quantitative" | "qualitative" | "feedback";  // Cố định 3 loại
-  weight: number;               // 0-100
+  id: string;                        // "p1", "p2", ... (trong context của version)
+  definition_id: string;             // FK → PillarDefinition.id ("QUANTITATIVE", ...)
+  name_override?: string;            // Tùy chọn: đặt tên khác cho phòng này
+  weight: number;                    // 0-100
   questions: Question[];
 };
 ```
 
 **Constraints:**
-- Mỗi Version có **đúng 3 pillars**, mỗi loại 1
+- Mỗi Version có **2–6 pillars**
+- `definition_id` phải tồn tại trong PillarDefinition và `active = true`
+- Không được có 2 pillar cùng `definition_id` trong một version
 - `weight` là số nguyên 0-100
-- Σ weight của 3 pillars = 100 (để publish được)
+- Σ weight của tất cả pillars = 100 (để publish được)
+- Default khi tạo template mới: 3 pillars — QUANTITATIVE (50) + QUALITY_360 (30) + FEEDBACK (20)
 
 ### Question (embedded trong Pillar)
 
@@ -350,11 +401,11 @@ type AuditLog = {
 
 ## Scoring Calculation
 
-Khi chấm điểm cuối kỳ cho một nhân viên:
+Khi chấm điểm cuối kỳ cho một nhân viên, hệ thống duyệt qua tất cả pillars của version đang active. Mỗi pillar tính điểm theo `data_source` của `PillarDefinition` tương ứng.
 
-### Pillar 1 (Quantitative)
+### Pillar data_source = "quantitative"
 
-Với mỗi Question trong Pillar 1:
+Với mỗi Question trong pillar:
 
 ```
 if type == "work_points":
@@ -367,34 +418,50 @@ if type == "work_quality":
     score = (Σ quantity where status == "completed_ontime") / (Σ quantity total) × 100
 ```
 
-### Pillar 2 (Qualitative)
+### Pillar data_source = "qualitative_360"
 
-Thu thập từ form 360° (phạm vi ngoài scope phần mềm này — có thể là Google Form). Mỗi câu hỏi `scale` trung bình điểm từ các người chấm.
-
-Các chỉ số `scale` có `linkedEventCategories` có thể được **điều chỉnh** bởi điểm sự vụ tương ứng (VD: điểm "Chăm chỉ" bị trừ nếu có nhiều sự vụ `absence`).
-
-### Pillar 3 (Feedback)
-
-Với mỗi Question trong Pillar 3:
+Thu thập từ bảng `qualitative_scores` (form 360° — có thể là Google Form hoặc form nội bộ). Mỗi question lấy **trung bình điểm** từ tất cả evaluators trong kỳ, sau đó normalize về thang 0-100:
 
 ```
-event_score = Σ severity_multiplier for events matching linkedEventCategories,
-              where status = "confirmed" and occurredAt in period
-              (positive categories cộng, negative categories trừ)
-
-# Normalize về thang 0-100 của pillar
-normalized = normalize(event_score)
+avg_score = mean(qualitative_scores where question_id = Q and period overlaps)
+normalized = avg_score / 10 × 100   # thang gốc 0-10 → 0-100
 ```
 
-### Tổng điểm
+Câu hỏi `scale` có `linkedEventCategories` có thể được **điều chỉnh** bởi sự vụ tương ứng (VD: điểm "Chuyên cần" bị trừ nếu có nhiều event `absence` confirmed).
+
+### Pillar data_source = "event_driven"
+
+Với mỗi Question trong pillar:
 
 ```
-total = (pillar1_score × pillar1_weight
-       + pillar2_score × pillar2_weight
-       + pillar3_score × pillar3_weight) / 100
+net_score = Σ (polarity × severity_multiplier) for confirmed events
+              matching linkedEventCategories, occurredAt in period
+
+# Normalize về 0-100 bằng công thức clamp tuyến tính:
+# Baseline = 50 (trung lập), mỗi đơn net_score = ±5 điểm, clamped [0, 100]
+normalized = clamp(50 + net_score × 5, 0, 100)
 ```
 
-Xếp hạng từ total: A (≥85), B (70-84), C (55-69), D (<55) — threshold có thể chỉnh.
+*Ví dụ:* net_score = +2 → 60 điểm; net_score = −4 → 30 điểm; net_score ≥ +10 → 100 điểm.
+
+Hệ số `5` và baseline `50` là **configurable** mỗi org (xem business-rules.md §4).
+
+### Pillar data_source = "manual"
+
+QL nhập điểm trực tiếp vào bảng `qualitative_scores` với `evaluator_role = "manager"` mỗi kỳ đánh giá. Không có tính toán tự động.
+
+### Tổng điểm (N pillars)
+
+```
+pillar_scores = []
+for pillar in version.pillars:
+    pillar_score = calculate_pillar(pillar, period)   # theo data_source ở trên
+    pillar_scores.append(pillar_score × pillar.weight)
+
+total = Σ pillar_scores / 100
+```
+
+Xếp hạng từ total: A (≥85), B (70–84), C (55–69), D (<55) — threshold có thể chỉnh theo org.
 
 ## Suggested Storage
 

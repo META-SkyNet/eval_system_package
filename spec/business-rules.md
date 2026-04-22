@@ -165,10 +165,13 @@ heavy   → 4
 
 Một Version chỉ được publish khi:
 
-1. Tổng trọng số 3 pillars = 100
-2. Có ít nhất 1 question trong mỗi pillar
-3. Không có question nào có `weight = 0`
-4. Question type `work_count` phải có `workTypeIds` không rỗng
+1. Số pillars nằm trong khoảng **2–6**
+2. Mỗi pillar có `definition_id` hợp lệ (tồn tại trong library và `active = true`)
+3. Không có 2 pillar cùng `definition_id` trong version
+4. Tổng trọng số tất cả pillars = 100
+5. Có ít nhất 1 question trong mỗi pillar
+6. Không có question nào có `weight = 0`
+7. Question type `work_count` phải có `workTypeIds` không rỗng
 
 ### Publish side effects
 

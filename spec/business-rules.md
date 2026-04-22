@@ -448,7 +448,106 @@ Event {
 }
 ```
 
-## 15. Giới hạn hiện tại (v1)
+## 15. AI Evaluation Rules
+
+### Luồng xử lý
+
+```
+POST /ai-evaluations
+    │
+    ├── Validate: work_type_code có criteria active không?
+    │       Không → 422 NO_CRITERIA
+    │
+    ├── Validate: work_data có đủ required_fields không?
+    │       Không → 422 INSUFFICIENT_DATA
+    │
+    ├── Idempotency check: (external_id, source) đã tồn tại?
+    │       Có → return existing ai_evaluation_id, 200
+    │
+    ├── Build AI prompt từ criteria + work_data
+    ├── Call AI API
+    ├── Parse result → RuleScores + DetectedEvents + RedFlags
+    │
+    ├── Tạo WorkLog (status = "pending_review", source = source)
+    ├── Tạo Events (status = "pending") cho mỗi DetectedEvent
+    └── Tạo AIEvaluation record
+```
+
+### Immutability của criteria
+
+Criteria `active` hoặc `archived` không được UPDATE. Chỉ được:
+- Đọc (GET)
+- Archive (khi publish version mới)
+
+Muốn thay đổi → tạo draft mới → publish → version cũ tự archive.
+
+Lý do: nếu criteria thay đổi hồi tố, điểm cũ trở nên vô nghĩa và NV mất lòng tin vào hệ thống.
+
+### Review rules
+
+**QL có 3 hành động với mỗi AI Evaluation:**
+
+1. `confirm` — đồng ý với AI. WorkLog và Events chuyển sang `confirmed`, tính điểm.
+2. `override` — không đồng ý, tự nhập kết quả mới. Ghi rõ lý do (bắt buộc).
+3. `discard` — công việc không cần chấm (nhầm người, trùng lặp...). WorkLog bị xoá.
+
+**Thời hạn review:**
+
+| Severity | Thời hạn review | Quá hạn |
+|----------|----------------|---------|
+| light | 7 ngày | Auto-confirm nếu accuracy phase đạt (xem bên dưới) |
+| medium | 3 ngày | Tự archive, không tính điểm |
+| heavy | Không giới hạn | QL phải xử lý thủ công |
+
+### Soft launch và accuracy phase
+
+**Giai đoạn 1 (tháng 1–2): Observation**
+- Tất cả AI evaluation ở `pending`, chờ QL review
+- Điểm chưa tính vào KPI thật
+- Hệ thống đo: `accuracy = confirm / (confirm + override)`
+
+**Giai đoạn 2 (từ tháng 3): Production theo threshold**
+
+```python
+if accuracy(severity="light") >= 0.90:
+    light_cases → auto_confirm sau 7 ngày không review
+
+if accuracy(severity="medium") >= 0.85:
+    medium_cases → nhắc QL review trong 3 ngày, không auto
+
+# Heavy luôn luôn manual
+```
+
+Threshold tính riêng theo từng `work_type_code`, không gộp chung.
+
+### Red flags
+
+Red flags không tạo WorkLog hay Event — chỉ tạo alert cho admin/QL:
+
+```
+AIAlert {
+  ai_evaluation_id: ...,
+  type: "red_flag",
+  message: "Driver XYZ: thời gian giao quá nhanh so với quãng đường 3 lần/tuần",
+  requires_human_review: true
+}
+```
+
+Admin review thủ công, quyết định có tạo Event hay không.
+
+### Anti-gaming
+
+Khi criteria được publish, hệ thống lưu hash của `scoring_rules` để phát hiện nếu ai cố sửa trực tiếp DB (bypass versioning).
+
+NV không được xem chi tiết `scoring_rules` — chỉ xem kết quả tổng quan. Tránh NV optimize cho AI thay vì optimize cho công việc thật.
+
+### Idempotency
+
+`(external_id, source)` unique cho AIEvaluation — cùng công việc gửi 2 lần thì chỉ chấm 1 lần.
+
+---
+
+## 16. Giới hạn hiện tại (v1)
 
 **Chưa support:**
 - Multi-tenancy (mỗi company dùng 1 instance riêng)

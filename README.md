@@ -45,6 +45,7 @@ eval_system_package/
 | [04 — Khái quát hóa Công việc](docs/04-khai-quat-hoa-cong-viec.md) | Work Unit catalog, điểm công, đa phòng ban |
 | [05 — Tích hợp CRM/ERP](docs/05-tich-hop-crm-erp.md) | Side-by-side integration pattern |
 | [06 — Campaign & Peer Recognition](docs/06-campaign-kich-hoat-tinh-than.md) | Event-based motivation, giới hạn đạo đức |
+| [07 — AI Evaluation & Criteria](docs/07-ai-evaluation-va-criteria.md) | AI chấm điểm từ JSON nghiệp vụ, criteria versioning, pilot workflow |
 
 ### Spec — Kỹ thuật
 

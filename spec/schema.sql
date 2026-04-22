@@ -440,6 +440,68 @@ CREATE INDEX idx_dlq_status_created ON dead_letter_queue(status, created_at);
 CREATE INDEX idx_dlq_error_code ON dead_letter_queue(error_code);
 
 -- =============================================================================
+-- AI EVALUATIONS
+-- =============================================================================
+
+-- Kết quả mỗi lần AI chấm điểm một công việc.
+-- WorkLog và Events được tạo ở trạng thái pending_review cho đến khi QL duyệt.
+
+-- ai_result JSONB schema:
+-- {
+--   "overall_assessment": "excellent" | "good" | "poor" | "insufficient_data",
+--   "rule_scores": [
+--     { "rule_id": "ontime", "assessment": "good", "score_delta": 0, "reasoning": "..." }
+--   ],
+--   "detected_events": [
+--     { "rule_id": "quality", "category": "incident_damage", "severity": "heavy",
+--       "description": "...", "auto_created_event_id": "evt_xxx" }
+--   ],
+--   "red_flags_triggered": ["..."],
+--   "confidence": 0.87,
+--   "reasoning": "Tóm tắt đánh giá"
+-- }
+
+CREATE TABLE ai_evaluations (
+  id                    TEXT PRIMARY KEY DEFAULT ('aiev_' || substr(gen_random_uuid()::text, 1, 8)),
+  work_log_id           TEXT REFERENCES work_logs(id),
+  work_type_code        TEXT NOT NULL,
+  criteria_version      TEXT NOT NULL,          -- Version criteria đã dùng
+  employee_id           TEXT NOT NULL REFERENCES employees(id),
+  work_data_snapshot    JSONB NOT NULL,          -- JSON gốc từ hệ thống nghiệp vụ
+  external_id           TEXT,
+  source                TEXT,
+  ai_result             JSONB NOT NULL,
+  status                TEXT NOT NULL DEFAULT 'pending_review'
+                        CHECK (status IN ('pending_review', 'confirmed', 'overridden', 'discarded')),
+  reviewed_by           TEXT,
+  reviewed_at           TIMESTAMPTZ,
+  override_reason       TEXT,                   -- Bắt buộc nếu status = 'overridden'
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  UNIQUE (external_id, source)
+);
+
+CREATE INDEX idx_ai_evaluations_status ON ai_evaluations(status, created_at DESC);
+CREATE INDEX idx_ai_evaluations_employee ON ai_evaluations(employee_id, created_at DESC);
+CREATE INDEX idx_ai_evaluations_work_type ON ai_evaluations(work_type_code, status);
+
+-- AI Alerts: red flags không tạo event, chỉ tạo alert cho admin review
+CREATE TABLE ai_alerts (
+  id                TEXT PRIMARY KEY DEFAULT ('ala_' || substr(gen_random_uuid()::text, 1, 8)),
+  ai_evaluation_id  TEXT NOT NULL REFERENCES ai_evaluations(id),
+  employee_id       TEXT NOT NULL REFERENCES employees(id),
+  alert_type        TEXT NOT NULL DEFAULT 'red_flag',
+  message           TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'open'
+                    CHECK (status IN ('open', 'reviewed', 'dismissed')),
+  reviewed_by       TEXT,
+  reviewed_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_ai_alerts_status ON ai_alerts(status, created_at DESC);
+
+-- =============================================================================
 -- AUDIT LOGS
 -- =============================================================================
 

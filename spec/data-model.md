@@ -15,9 +15,13 @@ Department 1───N Employee
     ├──N Template 1───N Version 1───N Pillar (ref PillarDefinition) 1───N Question
     │
     └──1 WorkCatalog 1───N WorkUnitType 1───N WorkLog N───1 Employee
-                                                │
-                                                │ 0..1
-                                                ▼
+                               │                  │
+                               │ 0..1             │ 0..1
+                               ▼                  ▼
+                        EvaluationCriteria   AIEvaluation
+                        (versioned, embedded)      │
+                                                   │ 0..N
+                                                   ▼
                                                 Event N───1 Employee
 ```
 
@@ -199,12 +203,15 @@ type WorkCatalog = {
 
 ```typescript
 type WorkUnitType = {
-  id: string;                   // Internal ID: "wt_d1"
-  code: string;                 // Stable code: "LAP_DH" — dùng trong API
-  name: string;                 // "Lắp đặt điều hòa"
-  points: number;               // Điểm công cơ bản, có thể là số thực (0.5, 1.5)
+  id: string;                        // Internal ID: "wt_d1"
+  code: string;                      // Stable code: "LAP_DH" — dùng trong API
+  name: string;                      // "Lắp đặt điều hòa"
+  points: number;                    // Điểm công cơ bản, có thể là số thực (0.5, 1.5)
   note?: string;
   active: boolean;
+
+  // MỚI: Criteria cho AI chấm điểm (optional)
+  evaluation_criteria?: EvaluationCriteria | null;
 };
 ```
 
@@ -212,6 +219,94 @@ type WorkUnitType = {
 - `(departmentId, code)` UNIQUE
 - Code là stable identifier, không đổi. Muốn thay thế → mark `active = false`, tạo code mới.
 - Điểm công có thể chỉnh (không làm invalidate Work Logs cũ — chúng vẫn giữ số điểm đã tính)
+- `evaluation_criteria` là optional — WorkType không có criteria thì không áp dụng AI chấm
+
+### EvaluationCriteria
+
+Bộ tiêu chí AI chấm điểm gắn với một WorkUnitType. Có versioning riêng — thay đổi tiêu chí thì tạo version mới, không overwrite.
+
+```typescript
+type EvaluationCriteria = {
+  version: string;                   // "1.0", "1.1", "2.0"
+  status: "draft" | "active" | "archived";
+  description_for_ai: string;        // Mô tả nghiệp vụ cho AI hiểu context
+  input_schema: {
+    required_fields: string[];       // Field bắt buộc phải có trong work_data JSON
+    optional_fields: string[];
+  };
+  scoring_rules: ScoringRule[];
+  red_flags: string[];               // Pattern bất thường cần alert riêng
+  context_to_consider: string[];     // Sắc thái nghiệp vụ — ngoại lệ hợp lý
+  created_at: ISO8601;
+  created_by: string;                // User ID của người tạo
+};
+
+type ScoringRule = {
+  rule_id: string;                   // Stable ID: "ontime", "quality", "price"
+  description: string;               // Mô tả tiêu chí cho người đọc
+  evaluation?: string;               // Hướng dẫn AI cách đọc fields
+  scoring: {
+    excellent?: string;              // "Điều kiện → +N điểm"
+    good?: string;
+    poor?: string;
+  };
+  auto_flag_event?: {
+    condition: string;               // Mô tả condition bằng text
+    creates_event: {
+      category: EventCategory;
+      severity: "light" | "medium" | "heavy";
+    };
+  };
+};
+```
+
+**Constraints:**
+- Chỉ 1 version có `status = "active"` mỗi WorkType
+- Criteria `active` hoặc `archived` **không được sửa** (immutable)
+- Thay đổi criteria → tạo version mới (clone, modify, publish)
+- `version_history` lưu tất cả versions để biết NV đã chấm theo tiêu chí nào
+
+### AIEvaluation (kết quả AI chấm)
+
+Kết quả mỗi lần AI chấm một work_data, lưu để audit và QL review.
+
+```typescript
+type AIEvaluation = {
+  id: string;
+  work_log_id: string;               // FK → WorkLog (vừa tạo, status pending_review)
+  work_type_code: string;
+  criteria_version: string;          // Version criteria đã dùng để chấm
+  employee_id: string;
+  work_data_snapshot: object;        // JSON gốc từ hệ thống nghiệp vụ
+  ai_result: {
+    overall_assessment: "excellent" | "good" | "poor" | "insufficient_data";
+    rule_scores: RuleScore[];
+    detected_events: DetectedEvent[];
+    red_flags_triggered: string[];
+    confidence: number;              // 0-1, AI tự ước lượng
+    reasoning: string;               // Giải thích ngắn của AI
+  };
+  status: "pending_review" | "confirmed" | "overridden" | "discarded";
+  reviewed_by?: string;
+  reviewed_at?: ISO8601;
+  created_at: ISO8601;
+};
+
+type RuleScore = {
+  rule_id: string;
+  assessment: "excellent" | "good" | "poor" | "skipped";
+  score_delta: number;               // +2, -1, 0, v.v.
+  reasoning: string;
+};
+
+type DetectedEvent = {
+  rule_id: string;
+  category: EventCategory;
+  severity: "light" | "medium" | "heavy";
+  description: string;
+  auto_created_event_id?: string;    // FK → Event nếu đã tạo
+};
+```
 
 ### WorkLog
 

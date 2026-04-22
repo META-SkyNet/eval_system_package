@@ -551,6 +551,247 @@ Lấy lời cảm ơn NV đã nhận (cho dashboard cá nhân).
 
 ---
 
+---
+
+## Nhóm endpoints: AI Evaluation
+
+Các endpoints để hệ thống nghiệp vụ (CRM, ERP, Chat Agent) đẩy dữ liệu công việc sang để AI chấm điểm. Kết quả luôn ở `pending` — QL phải review trước khi tính điểm.
+
+### POST /api/v1/ai-evaluations
+
+Đẩy dữ liệu một công việc để AI chấm dựa trên criteria của WorkType.
+
+**Request:**
+```json
+{
+  "work_type_code": "CHAT_SESSION",
+  "employee_external_id": "CRM_EMP_042",
+  "work_data": {
+    "conversation_id": "chat_8847",
+    "agent_id": "CRM_EMP_042",
+    "messages": [...],
+    "duration_minutes": 14,
+    "resolved": true,
+    "customer_sentiment_end": "neutral"
+  },
+  "occurred_at": "2026-04-22T14:30:00Z",
+  "external_id": "CHAT-2026-04-22-8847",
+  "source": "crm"
+}
+```
+
+**Fields:**
+
+| Field | Required | Ghi chú |
+|-------|----------|---------|
+| `work_type_code` | ✓ | Phải có criteria active |
+| `employee_external_id` | ✓ | Phải đã map |
+| `work_data` | ✓ | JSON của công việc — phải có đủ required_fields theo criteria |
+| `occurred_at` | ✓ | Thời điểm công việc xảy ra |
+| `external_id` | ✓ | Dùng cho idempotency |
+| `source` | ✓ | "crm", "erp", "chat_agent", v.v. |
+
+**Response thành công (201):**
+```json
+{
+  "ok": true,
+  "ai_evaluation_id": "aiev_7c3f",
+  "work_log_id": "wl_5f3a2b",
+  "status": "pending_review",
+  "ai_result": {
+    "overall_assessment": "good",
+    "rule_scores": [
+      {
+        "rule_id": "response_time",
+        "assessment": "good",
+        "score_delta": 0,
+        "reasoning": "Phản hồi sau 4 phút, trong ngưỡng good"
+      },
+      {
+        "rule_id": "tone",
+        "assessment": "excellent",
+        "score_delta": 2,
+        "reasoning": "Agent gọi tên khách, xin lỗi đúng chỗ, không viết tắt"
+      },
+      {
+        "rule_id": "resolution",
+        "assessment": "excellent",
+        "score_delta": 3,
+        "reasoning": "Giải quyết hoàn toàn trong 1 phiên, khách xác nhận hài lòng"
+      }
+    ],
+    "detected_events": [],
+    "red_flags_triggered": [],
+    "confidence": 0.87,
+    "reasoning": "Phiên chat đạt chất lượng tốt. Điểm mạnh: thái độ và kết quả. Không có điểm cần cải thiện rõ ràng."
+  }
+}
+```
+
+**Response khi thiếu dữ liệu (422 — INSUFFICIENT_DATA):**
+```json
+{
+  "ok": false,
+  "error_code": "INSUFFICIENT_DATA",
+  "error": "work_data thiếu field bắt buộc: messages, conversation_id",
+  "missing_fields": ["messages", "conversation_id"]
+}
+```
+
+**Response khi WorkType không có criteria (422 — NO_CRITERIA):**
+```json
+{
+  "ok": false,
+  "error_code": "NO_CRITERIA",
+  "error": "WorkType 'LAP_DH' chưa có evaluation criteria. Tạo criteria trước."
+}
+```
+
+---
+
+### GET /api/v1/ai-evaluations/{id}
+
+Xem chi tiết kết quả AI chấm (để QL review).
+
+**Response:**
+```json
+{
+  "ok": true,
+  "id": "aiev_7c3f",
+  "work_log_id": "wl_5f3a2b",
+  "employee_external_id": "CRM_EMP_042",
+  "work_type_code": "CHAT_SESSION",
+  "criteria_version": "1.0",
+  "status": "pending_review",
+  "ai_result": { ... },
+  "created_at": "2026-04-22T14:35:00Z"
+}
+```
+
+---
+
+### POST /api/v1/ai-evaluations/{id}/confirm
+
+QL xác nhận kết quả AI — WorkLog và Events chuyển sang `confirmed`.
+
+**Request:**
+```json
+{
+  "action": "confirm",
+  "note": "Đồng ý với đánh giá của AI"
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "work_log_id": "wl_5f3a2b",
+  "events_confirmed": 0,
+  "points_applied": 5
+}
+```
+
+---
+
+### POST /api/v1/ai-evaluations/{id}/override
+
+QL không đồng ý, ghi đè kết quả AI.
+
+**Request:**
+```json
+{
+  "action": "override",
+  "override_assessment": "excellent",
+  "override_reason": "AI không biết context: khách này là VIP, phải xử lý ưu tiên, cần thêm thời gian",
+  "manual_rule_scores": [
+    { "rule_id": "resolution", "assessment": "excellent", "score_delta": 3 }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "work_log_id": "wl_5f3a2b",
+  "overridden_by": "ql_delivery",
+  "points_applied": 8
+}
+```
+
+---
+
+### GET /api/v1/ai-evaluations/pending
+
+Lấy danh sách kết quả AI đang chờ review (cho QL dashboard).
+
+**Query params:**
+- `department_code` (optional)
+- `work_type_code` (optional)
+- `limit` (default 50)
+
+**Response:**
+```json
+{
+  "ok": true,
+  "total_pending": 12,
+  "evaluations": [
+    {
+      "id": "aiev_7c3f",
+      "employee_name": "Nguyễn Văn Nam",
+      "work_type": "CHAT_SESSION",
+      "overall_assessment": "good",
+      "red_flags": 0,
+      "occurred_at": "2026-04-22T14:30:00Z",
+      "created_at": "2026-04-22T14:35:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### Nhóm endpoints: Criteria Management (internal/admin)
+
+#### GET /api/v1/work-types/{code}/criteria
+
+Lấy criteria hiện tại của một WorkType.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "work_type_code": "CHAT_SESSION",
+  "active_version": "1.0",
+  "criteria": { ... }
+}
+```
+
+#### POST /api/v1/work-types/{code}/criteria
+
+Tạo criteria mới (draft) hoặc publish version mới.
+
+**Request:**
+```json
+{
+  "action": "create_draft",
+  "criteria": {
+    "description_for_ai": "...",
+    "input_schema": { ... },
+    "scoring_rules": [ ... ],
+    "red_flags": [ ... ],
+    "context_to_consider": [ ... ]
+  }
+}
+```
+
+**action values:**
+- `"create_draft"` — tạo draft version mới
+- `"publish"` — publish draft → active (version cũ tự archive)
+
+---
+
 ## Testing
 
 Xem artifact `artifacts/api_integration_design.jsx` — có playground đầy đủ để test payload trước khi implement.

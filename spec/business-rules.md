@@ -315,7 +315,137 @@ GET scorecard nặng hơn POST events → rate limit riêng, VD 20 req/s.
 - API endpoints **không** hỗ trợ CORS (không cho gọi từ browser)
 - Dashboard frontend có endpoint riêng (ngoài scope spec này)
 
-## 13. Giới hạn hiện tại (v1)
+## 13. Campaign lifecycle rules
+
+### Vòng đời campaign
+
+```
+draft → active → completed
+          │
+          └──→ cancelled (có thể cancel khi đang active)
+```
+
+### Publish conditions
+
+Campaign chỉ được chuyển sang `active` khi:
+
+1. Có tên, mô tả, period hợp lệ (from < to)
+2. Type = `team_goal` → phải có ít nhất 1 goal
+3. Type = `individual_awards` → phải có ít nhất 1 award
+4. `period.from` chưa trôi qua (> now)
+5. `reward_description` không rỗng
+
+### Soft warnings khi publish
+
+Các điều kiện sau không block publish nhưng cảnh báo admin:
+
+- Có campaign cùng scope active trong 4 tuần qua → *"Khoảng nghỉ giữa các campaign nên ≥ 4 tuần"*
+- Period > 3 tháng → *"Campaign quá dài sẽ mất tính 'đặc biệt'"*
+- Reward budget = 0 hoặc rỗng → *"Không có reward vật chất có thể giảm động lực"*
+
+### Complete conditions
+
+Campaign chỉ được chuyển sang `completed` khi:
+
+1. `period.to` đã trôi qua (hoặc admin force complete)
+2. `ending_ritual_done = true` — **ép buộc** phải có tổng kết
+3. Nếu type = `individual_awards`: `winners` phải được điền
+
+Nếu cố complete mà `ending_ritual_done = false` → trả 400 với message: *"Campaign phải có buổi tổng kết trước khi đóng. Xem docs/06-campaign..."*
+
+### Goal calculation
+
+Field `goals[].current` được tính định kỳ (mỗi 15 phút):
+
+```python
+for goal in campaign.goals:
+    filter = {
+        "period": campaign.period,
+        "scope": campaign.scope,
+    }
+    
+    if goal.metric == "work_count":
+        goal.current = count(WorkLog, filter + workTypeIds)
+    elif goal.metric == "work_points":
+        goal.current = sum(WorkLog.pointsSnapshot, filter + workTypeIds)
+    elif goal.metric == "ontime_rate":
+        goal.current = calc_ontime_percentage(WorkLog, filter)
+    elif goal.metric == "event_count":
+        goal.current = count(Event, filter + eventCategories + status=confirmed)
+    
+    goal.last_calculated_at = now()
+```
+
+### Award winners calculation
+
+Khi campaign type = `individual_awards` sắp complete, hệ thống gợi ý winners dựa trên `metric_source`:
+
+- `peer_recognition`: NV nhận nhiều PeerRecognition nhất trong period
+- `improvement`: NV có % improvement cao nhất so với period trước
+- `customer_praise`: NV có nhiều event `customer_praise` confirmed nhất
+- `consistency`: NV có nhiều ngày active nhất, ít sự vụ `absence` nhất
+- `manual`: admin tự chọn
+
+Admin có thể **override** gợi ý này. Quyết định cuối cùng là con người.
+
+### Auto-generate events cho winners
+
+Khi campaign complete:
+
+- Winners của individual awards → tạo Event positive tương ứng:
+  - "Người giúp đỡ nhiều nhất" → `teamwork`, severity `medium`
+  - "Cải thiện mạnh nhất" → `initiative`, severity `medium`
+  - "Ngôi sao khách hàng" → `customer_praise`, severity `medium`
+  - Khác → `initiative`, severity `light`
+- Events tự sinh có status `confirmed`, source `internal`, reportedBy = "Campaign XXX"
+- Link với campaign qua metadata để trace được
+
+### Tương tác với Evaluation Framework
+
+**Campaign KHÔNG trực tiếp** ảnh hưởng đến điểm đánh giá 3 trụ cột. Thay vào đó:
+
+- Campaign reward → trả thủ công, không qua hệ thống lương
+- Winner awards → tạo event positive → event này tính vào Pillar 3 như bất kỳ event nào khác
+- PeerRecognition → tạo event `teamwork` → tính vào Pillar 3
+
+Cách này giữ Campaign "sạch" (không kích hoạt Goodhart's Law) nhưng vẫn có dấu ấn lâu dài trong hồ sơ NV qua cơ chế events.
+
+## 14. PeerRecognition rules
+
+### Validation
+
+- `from_employee_id != to_employee_id` — không tự cảm ơn mình
+- `reason.length >= 20` ký tự — ép buộc lý do cụ thể, chống spam
+- Nếu có `campaign_id` và campaign đó là Recognition Week → enforce quota (mặc định 5 recognition/người/campaign)
+
+### Anti-abuse
+
+Phát hiện pattern bất thường:
+
+- NV A gửi > 10 recognition trong 24h → rate limit
+- NV A chỉ gửi cho NV B (A → B > 5 lần liên tiếp) → flag để admin review
+- NV A và B gửi qua lại đều đặn → flag (có thể collusion)
+- Recognition có reason text giống hệt nhau nhiều lần → flag (copy-paste spam)
+
+Flagged recognition không bị xoá tự động, admin review thủ công.
+
+### Auto-generate event
+
+Mỗi PeerRecognition tự động tạo 1 Event:
+
+```
+Event {
+  category: "teamwork",
+  severity: "light",
+  source: "internal",
+  status: "confirmed",           // Vì có proof là recognition text
+  reportedBy: "PeerRecognition from <from_employee.name>",
+  description: recognition.reason,
+  employeeId: recognition.to_employee_id,
+}
+```
+
+## 15. Giới hạn hiện tại (v1)
 
 **Chưa support:**
 - Multi-tenancy (mỗi company dùng 1 instance riêng)

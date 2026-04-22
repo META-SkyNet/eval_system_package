@@ -330,8 +330,6 @@ Headers: X-API-Key, X-Timestamp, X-Signature
 
 Server cache 5 phút. Gọi nhiều lần trong 5 phút trả về cùng snapshot. `cache_ttl_seconds` cho biết khi nào cache hết hạn.
 
----
-
 ## Webhook ngược (tuỳ chọn, future)
 
 Evaluation System có thể gọi ngược CRM khi event thay đổi status (pending → confirmed) — nếu CRM cần biết.
@@ -347,6 +345,209 @@ POST https://crm.company.vn/webhook/eval
 ```
 
 Chưa đặc tả trong v1 — thêm sau nếu có nhu cầu.
+
+---
+
+## Nhóm endpoints nội bộ: Campaigns
+
+Các endpoints này chủ yếu **nội bộ** (dùng bởi dashboard admin/NV), không phải từ CRM/ERP. Vẫn cần HMAC auth nhưng với API key loại "internal".
+
+### POST /api/v1/campaigns
+
+Tạo campaign mới (chỉ admin/manager).
+
+**Request:**
+```json
+{
+  "name": "Chiến dịch Mùa hè 2026",
+  "description": "Vượt qua cao điểm nắng nóng cùng nhau",
+  "type": "team_goal",
+  "period": {
+    "from": "2026-06-01",
+    "to": "2026-07-31"
+  },
+  "scope": {
+    "departmentIds": ["delivery"]
+  },
+  "goals": [
+    {
+      "metric": "work_count",
+      "workTypeIds": null,
+      "target": 15000
+    },
+    {
+      "metric": "ontime_rate",
+      "target": 88
+    }
+  ],
+  "reward_description": "Tiệc BBQ + 500k/người khi đạt. Vượt 110% thêm 1 ngày nghỉ mát.",
+  "reward_budget": 20000000
+}
+```
+
+**Response (201):**
+```json
+{
+  "ok": true,
+  "campaign_id": "cmp_summer_2026",
+  "status": "draft"
+}
+```
+
+**Lưu ý:**
+- Campaign tạo ra ở status `draft`, phải publish để active
+- Scope rỗng = toàn công ty (cần permission cao hơn để tạo)
+
+### POST /api/v1/campaigns/{id}/publish
+
+Publish campaign từ draft → active.
+
+**Điều kiện publish:**
+- Có ít nhất 1 goal (nếu type = team_goal) hoặc award (nếu type = individual_awards)
+- `period.from` chưa trôi qua
+- `reward_description` không rỗng
+- Soft warning nếu có campaign cùng scope active trong 4 tuần qua
+
+### GET /api/v1/campaigns/active
+
+Lấy danh sách campaign đang active cho widget dashboard.
+
+**Query params:**
+- `employee_external_id` (optional) — chỉ trả về campaign NV này thuộc scope
+
+**Response:**
+```json
+{
+  "ok": true,
+  "campaigns": [
+    {
+      "id": "cmp_summer_2026",
+      "name": "Chiến dịch Mùa hè 2026",
+      "type": "team_goal",
+      "period": { "from": "2026-06-01", "to": "2026-07-31" },
+      "days_remaining": 12
+    }
+  ]
+}
+```
+
+### GET /api/v1/campaigns/{id}/progress
+
+Lấy tiến độ campaign (cho widget và dashboard).
+
+**Response:**
+```json
+{
+  "ok": true,
+  "campaign_id": "cmp_summer_2026",
+  "name": "Chiến dịch Mùa hè 2026",
+  "period": { "from": "2026-06-01", "to": "2026-07-31" },
+  "days_remaining": 12,
+  "status": "active",
+  "goals": [
+    {
+      "metric": "work_count",
+      "target": 15000,
+      "current": 9847,
+      "progress_percent": 65.6,
+      "on_track": true,
+      "pace_message": "Đang đúng tiến độ"
+    },
+    {
+      "metric": "ontime_rate",
+      "target": 88,
+      "current": 91.2,
+      "progress_percent": 103.6,
+      "on_track": true,
+      "pace_message": "Đang vượt target"
+    }
+  ],
+  "overall_status": "on_track",
+  "encouragement": "Đội đang vượt target, cố gắng duy trì!"
+}
+```
+
+**Caching:** 15 phút server-side.
+
+### POST /api/v1/campaigns/{id}/complete
+
+Đánh dấu campaign kết thúc.
+
+**Request:**
+```json
+{
+  "ending_ritual_done": true,
+  "notes": "Đã tổ chức tiệc BBQ ngày 1/8. Chia reward 500k/người cho 12 NV đạt.",
+  "winners": ["emp_nam", "emp_cuong"]  // Nếu type = individual_awards
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "generated_events": 12,
+  "message": "Đã tạo 12 sự vụ teamwork/initiative cho NV đoạt giải"
+}
+```
+
+**Hành vi:**
+- Nếu `ending_ritual_done = false` → trả 400, campaign không được complete (buộc admin phải tổng kết trước)
+- Auto-generate events positive cho winners để ghi vào hồ sơ NV
+
+### POST /api/v1/peer-recognitions
+
+Gửi lời cảm ơn đồng nghiệp.
+
+**Request:**
+```json
+{
+  "to_employee_external_id": "CRM_EMP_042",
+  "reason": "Cảm ơn anh đã giúp tôi lắp máy điều hòa cho khách khó tính hôm thứ ba, anh rất kiên nhẫn giải thích.",
+  "campaign_id": "cmp_recognition_week_q2"
+}
+```
+
+**Response (201):**
+```json
+{
+  "ok": true,
+  "recognition_id": "pr_8a7b",
+  "generated_event_id": "evt_9c2d",
+  "remaining_quota_in_campaign": 3
+}
+```
+
+**Validation:**
+- `reason.length >= 20` — ép buộc lý do cụ thể
+- Nếu trong campaign Recognition Week: check quota (mặc định 5/người)
+- `from` và `to` khác nhau
+- Auto-generate Event với category `teamwork`, status `confirmed`
+
+### GET /api/v1/employees/{external_id}/recognitions
+
+Lấy lời cảm ơn NV đã nhận (cho dashboard cá nhân).
+
+**Query params:**
+- `period_from`, `period_to` (optional)
+- `campaign_id` (optional)
+
+**Response:**
+```json
+{
+  "ok": true,
+  "employee_external_id": "CRM_EMP_042",
+  "total": 7,
+  "recognitions": [
+    {
+      "from": "Phạm Thị Hoa",
+      "reason": "Cảm ơn anh đã giúp tôi lắp máy...",
+      "created_at": "2026-06-15T10:23:00Z",
+      "campaign_name": "Tuần lễ ghi nhận Q2 2026"
+    }
+  ]
+}
+```
 
 ---
 

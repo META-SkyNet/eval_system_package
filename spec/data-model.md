@@ -237,6 +237,90 @@ type EventCategory =
 - `status = disputed` tạm giữ, không tính cho đến khi resolve
 - Chỉ `status = confirmed` được cộng vào điểm sự vụ
 
+### Campaign
+
+Sự kiện kích hoạt tinh thần theo dịp. Xem `docs/06-campaign-kich-hoat-tinh-than.md`.
+
+```typescript
+type Campaign = {
+  id: string;
+  name: string;                    // "Chiến dịch Mùa hè 2026"
+  description: string;
+  type: "team_goal" | "individual_awards" | "recognition_week" | "milestone_celebration" | "skill_challenge";
+  status: "draft" | "active" | "completed" | "cancelled";
+
+  period: {
+    from: ISO8601;
+    to: ISO8601;
+  };
+
+  scope: {
+    departmentIds?: string[];      // null = toàn công ty
+    employeeIds?: string[];        // null = tất cả trong scope
+  };
+
+  goals?: CampaignGoal[];          // Cho type = team_goal
+  awards?: CampaignAward[];        // Cho type = individual_awards
+
+  reward_description: string;
+  reward_budget?: number;          // Chỉ tham khảo, không auto trả
+
+  created_by: string;
+  created_at: ISO8601;
+  completed_at?: ISO8601;
+  ending_ritual_done: boolean;     // Đảm bảo có tổng kết trước khi close
+};
+
+type CampaignGoal = {
+  id: string;
+  metric: "work_points" | "work_count" | "ontime_rate" | "event_count";
+  workTypeIds?: string[];
+  eventCategories?: string[];
+  target: number;
+  current?: number;                // Cache, cập nhật định kỳ
+  last_calculated_at?: ISO8601;
+};
+
+type CampaignAward = {
+  id: string;
+  title: string;                   // "Người giúp đỡ nhiều nhất"
+  criteria: string;                // Mô tả cách chấm
+  metric_source: "peer_recognition" | "improvement" | "customer_praise" | "consistency" | "manual";
+  winners?: string[];              // Điền cuối kỳ
+};
+```
+
+**Constraints:**
+- Campaign không tự động ảnh hưởng đến lương — reward tách biệt, chi trả thủ công
+- `ending_ritual_done = false` khi status chuyển sang `completed` → cảnh báo admin phải có tổng kết
+- Campaign reward tạo sự vụ (event) tích cực tương ứng để ghi vào hồ sơ NV (xem business rules)
+- Gap giữa 2 campaigns cùng scope nên ≥ 4 tuần (soft warning, không hard block)
+
+### PeerRecognition
+
+Lời cảm ơn giữa đồng nghiệp. Thường dùng trong Recognition Week campaign, có thể mở rộng dùng hàng ngày.
+
+```typescript
+type PeerRecognition = {
+  id: string;
+  from_employee_id: string;        // Người gửi
+  to_employee_id: string;          // Người nhận
+  reason: string;                  // Min 20 ký tự, bắt buộc cụ thể
+  campaign_id?: string;            // Nếu thuộc campaign
+
+  created_at: ISO8601;
+
+  // Tự động tạo event teamwork khi recognition được gửi:
+  generated_event_id?: string;     // FK → Event
+};
+```
+
+**Constraints:**
+- `from_employee_id != to_employee_id` (không tự cảm ơn mình)
+- Trong một Recognition Week campaign, có giới hạn N lời cảm ơn/người (mặc định 5)
+- `reason.length >= 20` — ép buộc lý do cụ thể, chống spam
+- Auto-generate Event với category `teamwork`, severity `light`, status `confirmed`, source `internal`
+
 ## Audit & History
 
 Các entity sau cần **audit log** (không xóa, append-only):
@@ -246,6 +330,8 @@ Các entity sau cần **audit log** (không xóa, append-only):
 - Employee active/inactive
 - API key create/revoke
 - WorkUnitType points change (để theo dõi đã điều chỉnh bao giờ)
+- Campaign create / publish / complete
+- PeerRecognition create (chống spam, detect fake patterns)
 
 Schema gợi ý:
 
@@ -320,4 +406,7 @@ Xếp hạng từ total: A (≥85), B (70-84), C (55-69), D (<55) — threshold 
   - `WorkLog.employeeId + completedAt` (query theo NV + thời gian)
   - `Event.employeeId + occurredAt`
   - `Event.status`
+  - `Campaign.status + period.from` (query active campaigns)
+  - `PeerRecognition.to_employee_id + created_at` (xem ai đang được cảm ơn)
+  - `PeerRecognition.from_employee_id + campaign_id` (enforce quota trong campaign)
 - **Audit logs** có thể dùng table riêng hoặc service chuyên biệt (VD: events to Kafka)

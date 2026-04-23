@@ -556,6 +556,32 @@ CREATE TRIGGER trg_employees_updated_at
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =============================================================================
+-- CALIBRATION PROPOSALS (đề xuất hiệu chuẩn từ 3 kỳ calibration)
+-- =============================================================================
+
+CREATE TABLE calibration_proposals (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  department_id       TEXT NOT NULL REFERENCES departments(id),
+  tree_id             UUID NOT NULL REFERENCES criterion_trees(id),
+  period_id_1         UUID NOT NULL REFERENCES eval_periods(id),  -- kỳ cũ nhất
+  period_id_2         UUID NOT NULL REFERENCES eval_periods(id),
+  period_id_3         UUID NOT NULL REFERENCES eval_periods(id),  -- kỳ gần nhất
+  status              TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'accepted', 'rejected')),
+  summary             TEXT NOT NULL,
+  changes             JSONB NOT NULL DEFAULT '[]',  -- CalibrationChange[]
+  generated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at          TIMESTAMPTZ NOT NULL,         -- generated_at + 30 ngày
+  reviewed_at         TIMESTAMPTZ,
+  reviewed_by         TEXT REFERENCES employees(id),
+  resulting_tree_id   UUID REFERENCES criterion_trees(id)  -- draft tạo ra nếu accepted
+);
+
+CREATE INDEX idx_calibration_proposals_dept   ON calibration_proposals(department_id, status);
+CREATE INDEX idx_calibration_proposals_tree   ON calibration_proposals(tree_id);
+CREATE INDEX idx_calibration_proposals_expiry ON calibration_proposals(expires_at) WHERE status = 'pending';
+
+-- =============================================================================
 -- SEED: Departments mẫu
 -- =============================================================================
 

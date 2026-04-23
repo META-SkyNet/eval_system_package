@@ -439,6 +439,43 @@ type PeerRecognition = {
 };
 ```
 
+### CalibrationProposal
+
+Đề xuất hiệu chuẩn được sinh từ phân tích 3 kỳ calibration liên tiếp. Manager review và accept để tạo draft tree mới.
+
+```typescript
+type CalibrationProposal = {
+  id: string;
+  departmentId: string;
+  treeId: string;               // CriterionTree được phân tích
+  periodIds: [string, string, string]; // 3 EvalPeriod được dùng (thứ tự thời gian)
+  status: "pending" | "accepted" | "rejected";
+  summary: string;              // Tóm tắt readable: "3 leaf cần điều chỉnh..."
+  changes: CalibrationChange[];
+  generatedAt: ISO8601;
+  reviewedAt?: ISO8601;
+  reviewedBy?: string;          // FK → Employee
+  resultingTreeId?: string;     // Draft tree được tạo nếu accepted
+};
+
+type CalibrationChange = {
+  changeId: string;
+  nodeId: string;               // FK → CriterionNode (leaf)
+  nodeName: string;             // Tên hiển thị
+  field: "target_points" | "base_unit_points" | "quality_weight";
+  currentValue: number;
+  suggestedValue: number;
+  confidence: number;           // 0.67 (2/3 kỳ) hoặc 1.0 (3/3 kỳ)
+  trend: "improving" | "stable" | "worsening";
+  reasoning: string;            // Giải thích tại sao đề xuất thay đổi này
+};
+```
+
+**Constraints:**
+- `status = "pending"` → có thể accept hoặc reject
+- `status != "pending"` → immutable
+- Proposal hết hạn sau 30 ngày kể từ `generatedAt`
+
 ### APIKey / AuditLog / DeadLetterQueue
 
 Giữ nguyên từ thiết kế cũ — không thay đổi.

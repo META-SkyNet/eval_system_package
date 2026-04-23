@@ -212,8 +212,94 @@ Mẫu thông báo cho nhân viên:
 
 ---
 
+---
+
+## Phân tích tự động 3 kỳ — Calibration Proposal
+
+Thay vì tự đọc Distribution Analysis và điều chỉnh thủ công, manager có thể bấm nút để hệ thống phân tích 3 kỳ calibration gần nhất và sinh ra **đề xuất cụ thể** (CalibrationProposal).
+
+### Điều kiện kích hoạt
+
+- Đã có **ít nhất 3 kỳ calibration** đã đóng (`status = closed` hoặc `finalized`)
+- Cả 3 kỳ phải dùng **cùng một CriterionTree version**
+- Cả 3 kỳ phải **liên tiếp** (không có kỳ nào xen giữa)
+- Mỗi kỳ có ít nhất **3 NV** có WorkLog để đủ ý nghĩa thống kê
+
+### Cách hệ thống phân tích
+
+Với mỗi leaf `eval_type=quantitative`, hệ thống:
+
+1. **Phân loại** từng kỳ: `TARGET_TOO_LOW` / `TARGET_TOO_HIGH` / `OK`
+2. **Kiểm tra nhất quán**: vấn đề phải xuất hiện ≥2/3 kỳ → mới đề xuất
+3. **Đo xu hướng** (trend): điểm trung bình đang tăng (improving), ổn định, hay giảm?
+4. **Tính hệ số điều chỉnh** dựa trên mức độ nghiêm trọng và xu hướng:
+
+| Tình huống | Hệ số đề xuất |
+|-----------|--------------|
+| >90% NV đạt ≥90, trend stable | target × 1.50 (+50%) |
+| >80% NV đạt ≥90, trend stable | target × 1.30 (+30%) |
+| >90% NV đạt ≥90, trend improving | target × 1.13 (+13%, thận trọng) |
+| >70% NV dưới 50, trend stable | target × 0.60 (-40%) |
+| >50% NV dưới 50, trend stable | target × 0.75 (-25%) |
+| >50% NV dưới 50, trend improving | target × 0.92 (-8%, thận trọng) |
+
+### Kết quả đề xuất
+
+Mỗi thay đổi trong đề xuất bao gồm:
+
+```
+node:           "Số chuyến giao"
+thay đổi:       target_points: 150 → 200
+confidence:     1.0  (3/3 kỳ đều thấy vấn đề)
+trend:          stable
+lý do:          "3/3 kỳ có >94% NV đạt ≥90. Trend ổn định.
+                 Đề xuất tăng target +33% để phân biệt tốt–xuất sắc."
+```
+
+### Workflow sau khi có đề xuất
+
+```
+[Manager bấm "Phân tích 3 kỳ gần nhất"]
+         │
+         ▼
+[Hệ thống sinh CalibrationProposal]
+  Danh sách leaf cần điều chỉnh
+  Với lý do + confidence + trend
+         │
+         ▼
+[Manager review từng thay đổi]
+  ✓ Chấp nhận — dùng giá trị đề xuất
+  ✓ Chấp nhận — ghi đè giá trị khác (override)
+  ✗ Bỏ qua — giữ nguyên leaf này
+         │
+         ▼
+[Manager bấm "Tạo phiên bản draft"]
+         │
+         ▼
+[Hệ thống clone tree hiện tại]
+  Áp dụng các thay đổi được chấp nhận
+  Ghi calibrationNotes tự động
+  Tree mới = draft, chưa active
+         │
+         ▼
+[Manager review draft → POST /criterion-trees/{id}/publish]
+         │
+         ▼
+[Mở kỳ calibration tiếp theo với tree mới]
+```
+
+### Lưu ý quan trọng
+
+- Proposal có hiệu lực **30 ngày** — sau đó hết hạn, cần phân tích lại
+- Một tree chỉ có thể có **1 proposal đang pending** tại một thời điểm
+- Hệ thống chỉ đề xuất thay đổi `target_points` — `weight` và `base_unit_points` vẫn cần điều chỉnh thủ công (đòi hỏi domain knowledge)
+- Manager luôn là người quyết định cuối — hệ thống chỉ đề xuất, không tự áp dụng
+
+---
+
 ## Đọc tiếp
 
 - `02-template-va-versioning.md` — lifecycle của CriterionTree (draft → active → archived)
-- `spec/business-rules.md` mục 17 — Distribution Analysis thresholds và quy tắc calibration
-- `spec/data-model.md` — `ScoringConfig`, `EvalPeriod.mode`, `CriterionTree.calibrationNotes`
+- `spec/business-rules.md` mục 17, 18 — Distribution Analysis + thuật toán 3 kỳ
+- `spec/api-specification.md` nhóm "Calibration" — `POST /calibration/analyze`, `POST /calibration/proposals/{id}/accept`
+- `spec/data-model.md` — `ScoringConfig`, `CalibrationProposal`, `EvalPeriod.mode`

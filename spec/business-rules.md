@@ -711,7 +711,132 @@ Sau khi publish tree v2, admin có thể chạy **shadow recalculation** trên k
 
 ---
 
-## 18. Giới hạn hiện tại (v2)
+## 18. Calibration Analysis — thuật toán 3 kỳ
+
+### Điều kiện đầu vào
+
+```python
+periods = EvalPeriod.filter(
+    department_id = dept,
+    criterion_tree_id = tree.id,
+    mode = "calibration",
+    status IN ("closed", "finalized")
+).order_by(period_start ASC)
+
+assert len(periods) >= 3,          "INSUFFICIENT_CALIBRATION_PERIODS"
+assert all_same_tree(periods),     "MIXED_TREE_VERSIONS"
+assert consecutive(periods),       "NON_CONSECUTIVE_PERIODS"
+assert all(has_min_3_employees(p) for p in periods[-3:]), "INSUFFICIENT_DATA"
+
+p1, p2, p3 = periods[-3:]  # 3 kỳ gần nhất
+```
+
+### Thuật toán per-leaf
+
+```python
+for leaf in tree.leaves where eval_type == "quantitative":
+
+    # Bước 1: Phân tích phân phối mỗi kỳ
+    dists = [distribution_analysis(leaf, p) for p in [p1, p2, p3]]
+
+    def classify(dist):
+        if dist.pct_above90 > 0.80: return "TARGET_TOO_LOW",  dist.pct_above90
+        if dist.pct_below50 > 0.50: return "TARGET_TOO_HIGH", dist.pct_below50
+        return "OK", 0
+
+    hints    = [classify(d)[0] for d in dists]
+    sevs     = [classify(d)[1] for d in dists]
+
+    # Bước 2: Kiểm tra tính nhất quán
+    dominant = max(set(hints), key=hints.count)
+    count    = hints.count(dominant)
+    if count < 2 or dominant == "OK":
+        continue  # Không nhất quán — bỏ qua leaf này
+
+    confidence = count / 3  # 0.67 (2/3) hoặc 1.0 (3/3)
+
+    # Bước 3: Phân tích xu hướng (means qua 3 kỳ)
+    means = [d.mean for d in dists]
+    if means[2] - means[0] > 5:
+        trend = "improving"   # Điểm đang tăng tự nhiên
+    elif means[0] - means[2] > 5:
+        trend = "worsening"
+    else:
+        trend = "stable"
+
+    # Bước 4: Tính hệ số điều chỉnh
+    avg_sev = mean(sevs)
+
+    if dominant == "TARGET_TOO_LOW":
+        factor = 1.50 if avg_sev > 0.90 else 1.30
+        # Nếu đang tự cải thiện → điều chỉnh thận trọng hơn
+        if trend == "improving": factor = max(factor * 0.75, 1.10)
+
+    elif dominant == "TARGET_TOO_HIGH":
+        factor = 0.60 if avg_sev > 0.70 else 0.75
+        # Nếu đang tự cải thiện → điều chỉnh thận trọng hơn
+        if trend == "improving": factor = min(factor * 1.30, 0.92)
+
+    suggested = round(leaf.scoring_config.target_points * factor)
+
+    # Bước 5: Sinh reasoning
+    periods_flagged = f"{count}/3 kỳ"
+    avg_metric = f"{avg_sev*100:.0f}%"
+    if dominant == "TARGET_TOO_LOW":
+        reason = (f"{periods_flagged} có >{avg_metric} NV đạt ≥90. "
+                  f"Trend: {trend}. Đề xuất tăng target "
+                  f"{leaf.scoring_config.target_points}→{suggested} (+{round((factor-1)*100)}%).")
+    else:
+        reason = (f"{periods_flagged} có >{avg_metric} NV dưới 50. "
+                  f"Trend: {trend}. Đề xuất giảm target "
+                  f"{leaf.scoring_config.target_points}→{suggested} ({round((factor-1)*100)}%).")
+
+    proposal.changes.append(CalibrationChange(
+        node_id       = leaf.id,
+        field         = "target_points",
+        current_value = leaf.scoring_config.target_points,
+        suggested_value = suggested,
+        confidence    = confidence,
+        trend         = trend,
+        reasoning     = reason,
+    ))
+```
+
+### Sau khi manager accept
+
+```python
+def apply_proposal(proposal_id, accepted_change_ids, overrides, notes):
+    proposal = CalibrationProposal.get(proposal_id)
+    assert proposal.status == "pending", "PROPOSAL_ALREADY_ACCEPTED"
+    assert not proposal.expired(),       "PROPOSAL_EXPIRED"
+    assert len(accepted_change_ids) > 0, "NO_CHANGES_ACCEPTED"
+
+    # Clone tree hiện tại → draft mới
+    draft = clone_tree(proposal.tree, increment_version=True)
+    draft.status            = "draft"
+    draft.calibration_notes = notes
+
+    for change in proposal.changes:
+        if change.change_id not in accepted_change_ids:
+            continue
+        value = overrides.get(change.change_id, {}).get("suggested_value",
+                                                         change.suggested_value)
+        # Cập nhật scoring_config của leaf trong draft
+        node = draft.find_node(change.node_id)
+        node.scoring_config[change.field] = value
+
+    proposal.status = "accepted"
+    save(draft, proposal)
+    return draft
+```
+
+### Hết hạn đề xuất
+
+Proposal hết hạn sau **30 ngày** kể từ `generated_at`. Lý do: dữ liệu 3 kỳ cũ mất tính tham chiếu nếu tổ chức đã thay đổi.
+
+---
+
+## 19. Giới hạn hiện tại (v2)
 
 **Chưa support:**
 

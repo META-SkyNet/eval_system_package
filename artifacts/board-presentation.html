@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hệ thống Đánh giá Nhân viên — Thuyết trình HĐQT</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy: #0f2040;
+    --navy-mid: #1a3560;
+    --gold: #c9922a;
+    --gold-light: #e8b84b;
+    --cream: #faf8f4;
+    --stone: #6b6560;
+    --green: #2d6a4f;
+    --green-light: #e8f5ee;
+    --red: #b91c1c;
+    --red-light: #fef2f2;
+    --blue-light: #eff6ff;
+    --slide-w: 1280px;
+    --slide-h: 720px;
+  }
+
+  body {
+    font-family: 'Be Vietnam Pro', 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+    user-select: none;
+  }
+
+  #slideshow {
+    width: var(--slide-w);
+    height: var(--slide-h);
+    position: relative;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.6);
+  }
+
+  .slide {
+    display: none;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0; left: 0;
+    padding: 60px 72px;
+    animation: fadeIn 0.3s ease;
+  }
+  .slide.active { display: flex; flex-direction: column; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* ── CONTROLS ── */
+  #controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-top: 20px;
+    color: #8892aa;
+    font-size: 13px;
+    font-family: 'Be Vietnam Pro', sans-serif;
+  }
+  .btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ccd6f6;
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+  }
+  .btn:hover { background: rgba(255,255,255,0.18); }
+  #progress { color: #8892aa; font-size: 14px; min-width: 60px; text-align: center; }
+
+  /* ── LAYOUT HELPERS ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; flex: 1; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; flex: 1; }
+  .four-col { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px; flex: 1; }
+  .col { display: flex; flex-direction: column; }
+  .flex-1 { flex: 1; }
+  .center { display: flex; align-items: center; justify-content: center; }
+  .text-center { text-align: center; }
+
+  /* ── TYPOGRAPHY ── */
+  .slide-title { font-size: 13px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 12px; }
+  h1 { font-size: 52px; font-weight: 800; line-height: 1.1; }
+  h2 { font-size: 36px; font-weight: 700; line-height: 1.2; margin-bottom: 8px; }
+  h3 { font-size: 22px; font-weight: 600; line-height: 1.3; margin-bottom: 6px; }
+  h4 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  p { font-size: 16px; line-height: 1.7; }
+  .lead { font-size: 20px; line-height: 1.6; }
+  .small { font-size: 13px; line-height: 1.5; }
+  .caption { font-size: 12px; opacity: 0.55; margin-top: 4px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; padding: 3px 10px; border-radius: 4px; }
+
+  /* ── CARDS & BOXES ── */
+  .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px; }
+  .card-light { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 16px rgba(0,0,0,0.08); }
+  .card-gold { background: linear-gradient(135deg, #7a4f10, #c9922a); border-radius: 12px; padding: 24px; color: white; }
+  .card-green { background: var(--green-light); border-radius: 12px; padding: 20px; }
+  .card-red { background: var(--red-light); border-radius: 12px; padding: 20px; }
+  .card-blue { background: var(--blue-light); border-radius: 12px; padding: 20px; }
+  .card-navy { background: var(--navy-mid); border-radius: 12px; padding: 24px; color: white; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 20px; }
+  .divider { height: 1px; background: rgba(255,255,255,0.1); margin: 16px 0; }
+  .divider-dark { height: 1px; background: rgba(0,0,0,0.08); margin: 12px 0; }
+
+  /* ── SCORE BAR ── */
+  .score-bar-wrap { margin: 8px 0; }
+  .score-bar-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .score-bar-bg { background: rgba(0,0,0,0.08); border-radius: 4px; height: 10px; overflow: hidden; }
+  .score-bar-fill { height: 100%; border-radius: 4px; transition: width 0.8s ease; }
+
+  /* ── ICON DOTS ── */
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; margin-top: 5px; }
+
+  /* ── TIMELINE ── */
+  .timeline { display: flex; gap: 0; flex: 1; }
+  .tl-item { flex: 1; position: relative; padding-top: 32px; }
+  .tl-item::before { content: ''; position: absolute; top: 10px; left: 0; right: 0; height: 2px; background: rgba(255,255,255,0.15); }
+  .tl-item:first-child::before { left: 50%; }
+  .tl-item:last-child::before { right: 50%; }
+  .tl-dot { width: 20px; height: 20px; border-radius: 50%; position: absolute; top: 1px; left: 50%; transform: translateX(-50%); }
+  .tl-content { padding: 0 12px; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 1 — COVER
+  ═══════════════════════════════════════════ */
+  .s1 {
+    background: linear-gradient(135deg, #0a1628 0%, #0f2040 50%, #1a1d3a 100%);
+    color: white;
+    justify-content: space-between;
+  }
+  .s1 .top-bar { display: flex; align-items: center; justify-content: space-between; }
+  .s1 .logo-area { display: flex; align-items: center; gap: 12px; }
+  .s1 .logo-box { width: 40px; height: 40px; background: var(--gold); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .s1 .logo-text { font-size: 14px; font-weight: 600; opacity: 0.7; letter-spacing: 1px; }
+  .s1 .date-badge { font-size: 13px; opacity: 0.5; }
+  .s1 .main { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .s1 .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--gold-light); margin-bottom: 20px; }
+  .s1 h1 { font-size: 56px; font-weight: 800; line-height: 1.1; margin-bottom: 24px; }
+  .s1 .accent { color: var(--gold-light); }
+  .s1 .subtitle { font-size: 18px; opacity: 0.6; line-height: 1.6; max-width: 640px; }
+  .s1 .bottom-bar { display: flex; gap: 32px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .s1 .stat { display: flex; flex-direction: column; }
+  .s1 .stat-num { font-size: 28px; font-weight: 800; color: var(--gold-light); }
+  .s1 .stat-label { font-size: 12px; opacity: 0.5; letter-spacing: 1px; text-transform: uppercase; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 2 — VẤN ĐỀ
+  ═══════════════════════════════════════════ */
+  .s2 { background: var(--cream); color: var(--navy); }
+  .s2 .slide-title { color: var(--stone); }
+  .s2 h2 { color: var(--navy); margin-bottom: 32px; }
+  .s2 .pain-item { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 20px; }
+  .s2 .pain-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .s2 .pain-text h4 { font-size: 16px; color: var(--navy); margin-bottom: 4px; }
+  .s2 .pain-text p { font-size: 14px; color: var(--stone); line-height: 1.5; }
+  .s2 .quote-box { background: var(--navy); color: white; border-radius: 16px; padding: 28px 32px; position: relative; }
+  .s2 .quote-box::before { content: '"'; font-size: 80px; font-weight: 800; color: var(--gold); line-height: 0.6; display: block; margin-bottom: 12px; }
+  .s2 .quote-text { font-size: 19px; line-height: 1.6; margin-bottom: 12px; }
+  .s2 .quote-attr { font-size: 13px; opacity: 0.5; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 3 — GIẢI PHÁP
+  ═══════════════════════════════════════════ */
+  .s3 { background: var(--navy); color: white; }
+  .s3 .slide-title { color: var(--gold-light); opacity: 0.8; }
+  .s3 h2 { color: white; margin-bottom: 8px; }
+  .s3 .tagline { color: var(--gold-light); font-size: 18px; margin-bottom: 32px; }
+  .s3 .principle-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 22px; display: flex; gap: 16px; align-items: flex-start; }
+  .s3 .p-icon { font-size: 28px; flex-shrink: 0; }
+  .s3 .p-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; color: var(--gold-light); }
+  .s3 .p-desc { font-size: 14px; opacity: 0.7; line-height: 1.5; }
+  .s3 .highlight-box { background: linear-gradient(135deg, rgba(201,146,42,0.2), rgba(232,184,75,0.1)); border: 1px solid rgba(201,146,42,0.3); border-radius: 14px; padding: 24px; text-align: center; }
+  .s3 .highlight-box .big { font-size: 44px; font-weight: 800; color: var(--gold-light); line-height: 1; }
+  .s3 .highlight-box .label { font-size: 14px; opacity: 0.6; margin-top: 6px; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 4 — CÂY TIÊU CHÍ
+  ═══════════════════════════════════════════ */
+  .s4 { background: white; color: var(--navy); }
+  .s4 .slide-title { color: var(--stone); }
+  .s4 h2 { margin-bottom: 6px; }
+  .s4 .sub { color: var(--stone); font-size: 16px; margin-bottom: 28px; }
+  .s4 .tree-wrap { background: var(--navy); border-radius: 16px; padding: 28px 32px; color: white; font-family: 'Courier New', monospace; font-size: 15px; line-height: 2; flex: 1; }
+  .s4 .folder { color: #93c5fd; font-weight: 600; }
+  .s4 .file-q { color: #86efac; }
+  .s4 .file-e { color: #fca5a5; }
+  .s4 .file-360 { color: #c4b5fd; }
+  .s4 .file-m { color: #fdba74; }
+  .s4 .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px; }
+  .s4 .legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .s4 .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 5 — VÍ DỤ THỰC TẾ
+  ═══════════════════════════════════════════ */
+  .s5 { background: var(--cream); color: var(--navy); }
+  .s5 .slide-title { color: var(--stone); }
+  .s5 h2 { margin-bottom: 24px; }
+  .s5 .dept-tab { display: inline-flex; border-radius: 10px; overflow: hidden; border: 1px solid #e2ddd8; margin-bottom: 20px; }
+  .s5 .dt-item { padding: 8px 20px; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .s5 .dt-item.on { background: var(--navy); color: white; }
+  .s5 .score-section { flex: 1; }
+  .s5 .nv-score { font-size: 64px; font-weight: 800; color: var(--navy); line-height: 1; }
+  .s5 .nv-score-label { font-size: 14px; color: var(--stone); margin-bottom: 20px; }
+  .s5 .grade { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; }
+  .s5 .grade-a { background: #dcfce7; color: var(--green); }
+  .s5 .grade-b { background: #dbeafe; color: #1d4ed8; }
+  .s5 .pillar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .s5 .pillar-name { font-size: 14px; font-weight: 500; width: 180px; flex-shrink: 0; }
+  .s5 .pillar-bar-bg { flex: 1; background: #e5e2de; border-radius: 4px; height: 10px; }
+  .s5 .pillar-bar { height: 100%; border-radius: 4px; }
+  .s5 .pillar-score { font-size: 14px; font-weight: 700; width: 40px; text-align: right; }
+  .s5 .weight-badge { font-size: 11px; color: var(--stone); width: 32px; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 6 — 3 NGUỒN DỮ LIỆU
+  ═══════════════════════════════════════════ */
+  .s6 { background: var(--navy); color: white; }
+  .s6 .slide-title { color: var(--gold-light); opacity: 0.8; }
+  .s6 h2 { margin-bottom: 6px; }
+  .s6 .sub { color: rgba(255,255,255,0.5); font-size: 16px; margin-bottom: 28px; }
+  .s6 .source-card { border-radius: 16px; padding: 28px; flex: 1; display: flex; flex-direction: column; }
+  .s6 .s-icon { font-size: 36px; margin-bottom: 12px; }
+  .s6 .s-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .s6 .s-sub { font-size: 13px; opacity: 0.6; margin-bottom: 16px; }
+  .s6 .s-example { font-size: 14px; opacity: 0.8; line-height: 1.6; }
+  .s6 .s-auto { background: rgba(134,239,172,0.12); border: 1px solid rgba(134,239,172,0.2); }
+  .s6 .s-human { background: rgba(196,181,253,0.12); border: 1px solid rgba(196,181,253,0.2); }
+  .s6 .s-event { background: rgba(252,165,165,0.12); border: 1px solid rgba(252,165,165,0.2); }
+  .s6 .flow-arrow { display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.2); font-size: 24px; }
+  .s6 .bottom-note { text-align: center; font-size: 14px; opacity: 0.45; padding-top: 16px; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 7 — AI HỖ TRỢ
+  ═══════════════════════════════════════════ */
+  .s7 { background: white; color: var(--navy); }
+  .s7 .slide-title { color: var(--stone); }
+  .s7 h2 { margin-bottom: 6px; }
+  .s7 .sub { color: var(--stone); font-size: 16px; margin-bottom: 28px; }
+  .s7 .flow-step { display: flex; flex-direction: column; align-items: center; text-align: center; flex: 1; }
+  .s7 .f-icon-wrap { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 12px; }
+  .s7 .f-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .s7 .f-desc { font-size: 13px; color: var(--stone); line-height: 1.5; }
+  .s7 .flow-arr { display: flex; align-items: center; color: #d0ccc8; font-size: 20px; padding-top: 20px; flex-shrink: 0; }
+  .s7 .rule-box { background: #fff8ed; border: 2px solid var(--gold); border-radius: 14px; padding: 24px 32px; text-align: center; }
+  .s7 .rule-box .icon { font-size: 32px; margin-bottom: 8px; }
+  .s7 .rule-box h3 { color: #92400e; font-size: 18px; margin-bottom: 6px; }
+  .s7 .rule-box p { font-size: 14px; color: #78350f; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 8 — LỢI ÍCH
+  ═══════════════════════════════════════════ */
+  .s8 { background: var(--cream); color: var(--navy); }
+  .s8 .slide-title { color: var(--stone); }
+  .s8 h2 { margin-bottom: 28px; }
+  .s8 .benefit-card { border-radius: 14px; padding: 24px; display: flex; flex-direction: column; }
+  .s8 .b-icon { font-size: 32px; margin-bottom: 12px; }
+  .s8 .b-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .s8 .b-desc { font-size: 14px; color: var(--stone); line-height: 1.6; flex: 1; }
+  .s8 .b-metric { font-size: 13px; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.08); }
+  .s8 .b-green { background: var(--green-light); }
+  .s8 .b-blue { background: var(--blue-light); }
+  .s8 .b-gold { background: #fff8ed; }
+  .s8 .b-purple { background: #f5f3ff; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 9 — LỘ TRÌNH
+  ═══════════════════════════════════════════ */
+  .s9 { background: var(--navy); color: white; }
+  .s9 .slide-title { color: var(--gold-light); opacity: 0.8; }
+  .s9 h2 { margin-bottom: 32px; }
+  .s9 .phase { border-radius: 16px; padding: 26px; position: relative; flex: 1; }
+  .s9 .ph1 { background: rgba(134,239,172,0.1); border: 1px solid rgba(134,239,172,0.2); }
+  .s9 .ph2 { background: rgba(147,197,253,0.1); border: 1px solid rgba(147,197,253,0.2); }
+  .s9 .ph3 { background: rgba(201,146,42,0.15); border: 1px solid rgba(201,146,42,0.25); }
+  .s9 .ph-badge { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+  .s9 .ph-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .s9 .ph-time { font-size: 13px; opacity: 0.5; margin-bottom: 16px; }
+  .s9 .ph-item { font-size: 14px; opacity: 0.8; line-height: 1.7; display: flex; gap: 8px; }
+  .s9 .ph-item::before { content: '→'; opacity: 0.5; flex-shrink: 0; }
+  .s9 .bottom-note { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 20px; font-size: 14px; opacity: 0.4; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 10 — NGUYÊN TẮC
+  ═══════════════════════════════════════════ */
+  .s10 { background: white; color: var(--navy); }
+  .s10 .slide-title { color: var(--stone); }
+  .s10 h2 { margin-bottom: 24px; }
+  .s10 .rule-item { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid #f0ece6; }
+  .s10 .rule-item:last-child { border-bottom: none; }
+  .s10 .rule-num { width: 28px; height: 28px; border-radius: 6px; background: var(--navy); color: white; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  .s10 .rule-text { font-size: 15px; line-height: 1.5; }
+  .s10 .rule-text strong { color: var(--navy); }
+  .s10 .promise-box { background: var(--navy); color: white; border-radius: 16px; padding: 28px; display: flex; flex-direction: column; justify-content: center; }
+  .s10 .promise-icon { font-size: 36px; margin-bottom: 12px; }
+  .s10 .promise-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: var(--gold-light); }
+  .s10 .promise-item { font-size: 14px; opacity: 0.75; line-height: 1.7; display: flex; gap: 8px; }
+
+  /* ═══════════════════════════════════════════
+     SLIDE 11 — CLOSING
+  ═══════════════════════════════════════════ */
+  .s11 { background: linear-gradient(135deg, #0a1628 0%, #0f2040 60%, #1a1d3a 100%); color: white; justify-content: space-between; }
+  .s11 .top { }
+  .s11 .mid { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .s11 .tag-line { color: var(--gold-light); font-size: 13px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 20px; }
+  .s11 h1 { font-size: 50px; font-weight: 800; margin-bottom: 20px; line-height: 1.1; }
+  .s11 .accent { color: var(--gold-light); }
+  .s11 .sub { font-size: 18px; opacity: 0.5; line-height: 1.6; max-width: 580px; }
+  .s11 .contact { display: flex; gap: 32px; padding-top: 24px; }
+  .s11 .contact-item { }
+  .s11 .c-label { font-size: 11px; opacity: 0.4; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+  .s11 .c-val { font-size: 16px; font-weight: 600; color: var(--gold-light); }
+  .s11 .bottom { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; display: flex; justify-content: space-between; align-items: center; }
+  .s11 .b-note { font-size: 13px; opacity: 0.3; }
+  .s11 .dots { display: flex; gap: 6px; }
+  .s11 .dots span { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.15); }
+  .s11 .dots span.on { background: var(--gold); }
+
+  @media print {
+    body { background: white; padding: 0; }
+    #slideshow { width: 100%; height: auto; box-shadow: none; border-radius: 0; }
+    .slide { position: relative; display: flex !important; page-break-after: always; height: 100vh; }
+    #controls { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="slideshow">
+
+  <!-- ══ SLIDE 1: COVER ══ -->
+  <div class="slide s1 active">
+    <div class="top-bar">
+      <div class="logo-area">
+        <div class="logo-box">📊</div>
+        <div class="logo-text">NỘI BỘ — HĐQT</div>
+      </div>
+      <div class="date-badge">Tháng 4, 2026</div>
+    </div>
+    <div class="main">
+      <div class="eyebrow">Trình bày dự án chiến lược</div>
+      <h1>Hệ thống<br>Đánh giá<br><span class="accent">Nhân viên</span></h1>
+      <div class="subtitle" style="margin-top:20px">Từ dữ liệu vận hành sẵn có → Xếp hạng công bằng, minh bạch, có thể kiểm chứng cho mọi phòng ban.</div>
+    </div>
+    <div class="bottom-bar">
+      <div class="stat"><div class="stat-num">10</div><div class="stat-label">Phòng ban</div></div>
+      <div class="stat"><div class="stat-num">3</div><div class="stat-label">Vai trò</div></div>
+      <div class="stat"><div class="stat-num">4</div><div class="stat-label">Nguồn dữ liệu</div></div>
+      <div class="stat"><div class="stat-num">Ngay</div><div class="stat-label">Bắt đầu được</div></div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 2: VẤN ĐỀ ══ -->
+  <div class="slide s2">
+    <div class="slide-title">Bối cảnh</div>
+    <h2>Tại sao chúng ta cần hệ thống này?</h2>
+    <div class="two-col" style="align-items:start">
+      <div class="col" style="gap:16px">
+        <div class="pain-item">
+          <div class="pain-icon">🤔</div>
+          <div class="pain-text">
+            <h4>Đánh giá theo cảm tính</h4>
+            <p>QL nắm 70–80% hiệu quả NV qua quan sát hàng ngày — nhưng khi cần giải thích, không có số liệu cụ thể để bảo vệ quyết định.</p>
+          </div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-icon">📦</div>
+          <div class="pain-text">
+            <h4>Dữ liệu có sẵn nhưng chưa dùng</h4>
+            <p>Đơn giao, đơn nhập, phản hồi khách, sự cố — tất cả đã có trong hệ thống hiện tại nhưng chưa được tổng hợp thành điểm số.</p>
+          </div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-icon">⚖️</div>
+          <div class="pain-text">
+            <h4>Khó so sánh giữa các phòng</h4>
+            <p>Giao hàng đo bằng chuyến. Kế toán đo bằng báo cáo. Biên tập đo bằng asset. Không có ngôn ngữ chung để xếp hạng công bằng.</p>
+          </div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-icon">😤</div>
+          <div class="pain-text">
+            <h4>Mâu thuẫn khi thưởng/phạt</h4>
+            <p>Không có khung chuẩn → NV cảm thấy thiếu công bằng, QL khó bảo vệ quyết định khi có tranh cãi.</p>
+          </div>
+        </div>
+      </div>
+      <div class="col" style="justify-content:center">
+        <div class="quote-box">
+          <div class="quote-text">Tại sao phải chờ công nghệ? Chúng ta đã có đủ dữ liệu rồi. Chỉ cần một khung có cấu trúc để gom lại.</div>
+          <div class="quote-attr">— Quản lý phòng vận hành, điểm xuất phát của dự án</div>
+        </div>
+        <div style="margin-top:20px; padding:20px; background:white; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,0.06)">
+          <div style="font-size:13px; color:var(--stone); margin-bottom:12px; font-weight:600">VẤN ĐỀ CỐT LÕI</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; align-items:center; gap:10px; font-size:14px;"><span style="color:#ef4444">✗</span> <span>Thiếu <strong>khung cấu trúc</strong> thu thập dữ liệu</span></div>
+            <div style="display:flex; align-items:center; gap:10px; font-size:14px;"><span style="color:#ef4444">✗</span> <span>Thiếu <strong>ngôn ngữ chung</strong> giữa các phòng</span></div>
+            <div style="display:flex; align-items:center; gap:10px; font-size:14px;"><span style="color:#ef4444">✗</span> <span>Thiếu <strong>lịch sử kiểm chứng</strong> khi có tranh cãi</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 3: GIẢI PHÁP ══ -->
+  <div class="slide s3">
+    <div class="slide-title">Giải pháp</div>
+    <h2>Một lớp tổng hợp dữ liệu — không thay thế hệ thống hiện tại</h2>
+    <div class="tagline">Tích hợp bên cạnh CRM/ERP, không bắt công ty phải thay đổi gì cả.</div>
+    <div class="two-col">
+      <div class="col" style="gap:16px">
+        <div class="principle-card">
+          <div class="p-icon">⚡</div>
+          <div>
+            <div class="p-title">Bắt đầu được ngay</div>
+            <div class="p-desc">Chạy bằng Excel/Google Sheets trước khi có phần mềm. Dữ liệu đã có sẵn trong hệ thống, chỉ cần khung để gom lại.</div>
+          </div>
+        </div>
+        <div class="principle-card">
+          <div class="p-icon">🌐</div>
+          <div>
+            <div class="p-title">Bao phủ mọi phòng ban</div>
+            <div class="p-desc">Cùng một khung áp cho Giao hàng, Kế toán, Biên tập, IT... Mỗi phòng tự cấu hình tiêu chí phù hợp đặc thù của mình.</div>
+          </div>
+        </div>
+        <div class="principle-card">
+          <div class="p-icon">🔗</div>
+          <div>
+            <div class="p-title">Không thay thế CRM/ERP</div>
+            <div class="p-desc">Hệ thống đọc dữ liệu từ CRM/ERP hiện có, tổng hợp thành điểm số. Phòng ban tiếp tục làm việc bình thường.</div>
+          </div>
+        </div>
+        <div class="principle-card">
+          <div class="p-icon">📋</div>
+          <div>
+            <div class="p-title">Có lịch sử kiểm chứng</div>
+            <div class="p-desc">Mọi điểm số đều có dữ liệu nguồn. Khi có tranh cãi, QL và NV đều xem được cơ sở tính điểm.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col" style="gap:20px; justify-content:center">
+        <div class="highlight-box">
+          <div class="big">70–80%</div>
+          <div class="label" style="color:rgba(255,255,255,0.6)">điểm đánh giá đến từ dữ liệu tự động<br>đã có sẵn trong hệ thống hiện tại</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:24px;">
+          <div style="font-size:13px; color:var(--gold-light); font-weight:600; margin-bottom:16px; letter-spacing:1px;">SO SÁNH</div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; gap:10px; align-items:center; font-size:14px; opacity:0.7;"><span style="color:#ef4444; font-size:16px;">✗</span> Mua phần mềm KPI mới toanh</div>
+            <div style="display:flex; gap:10px; align-items:center; font-size:14px; opacity:0.7;"><span style="color:#ef4444; font-size:16px;">✗</span> Thay thế CRM/ERP đang chạy tốt</div>
+            <div style="display:flex; gap:10px; align-items:center; font-size:14px; opacity:0.7;"><span style="color:#ef4444; font-size:16px;">✗</span> Nhập liệu thủ công hàng ngày</div>
+            <div class="divider"></div>
+            <div style="display:flex; gap:10px; align-items:center; font-size:14px; color:var(--gold-light);"><span style="font-size:16px;">✓</span> Tích hợp bên cạnh, không can thiệp</div>
+            <div style="display:flex; gap:10px; align-items:center; font-size:14px; color:var(--gold-light);"><span style="font-size:16px;">✓</span> Dữ liệu tự động từ hệ thống hiện tại</div>
+            <div style="display:flex; gap:10px; align-items:center; font-size:14px; color:var(--gold-light);"><span style="font-size:16px;">✓</span> Bắt đầu với Excel, nâng cấp khi sẵn sàng</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 4: CÂY TIÊU CHÍ ══ -->
+  <div class="slide s4">
+    <div class="slide-title">Cơ chế hoạt động</div>
+    <h2>Cây tiêu chí — Đơn giản như cấu trúc thư mục</h2>
+    <div class="sub">Mỗi phòng ban xây cây tiêu chí riêng. Folder gom nhóm, File là tiêu chí đo cụ thể. Điểm cuối = tổng hợp có trọng số từ gốc lên ngọn.</div>
+    <div class="two-col" style="gap:24px">
+      <div class="tree-wrap">
+<span style="color:#64748b">📂</span> <span style="color:#e2e8f0; font-weight:700">Phòng Giao hàng</span>
+├── <span class="folder">📁 Kết quả giao/nhập (50%)</span>
+│   ├── <span class="file-q">📄 Số chuyến hoàn thành — 30%</span>  <span style="color:#64748b;font-size:12px">tự động</span>
+│   ├── <span class="file-q">📄 Tỷ lệ đúng hạn — 40%</span>  <span style="color:#64748b;font-size:12px">tự động</span>
+│   └── <span class="file-q">📄 Giao đúng địa chỉ — 30%</span>  <span style="color:#64748b;font-size:12px">tự động</span>
+├── <span class="folder">📁 Chất lượng & An toàn (30%)</span>
+│   ├── <span class="file-e">📄 Phản hồi khách — 40%</span>  <span style="color:#64748b;font-size:12px">sự kiện</span>
+│   ├── <span class="file-e">📄 Hàng hỏng khi giao — 30%</span>  <span style="color:#64748b;font-size:12px">sự kiện</span>
+│   └── <span class="file-e">📄 Vi phạm an toàn — 30%</span>  <span style="color:#64748b;font-size:12px">sự kiện</span>
+└── <span class="folder">📁 Thái độ (20%)</span>
+&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="file-360">📄 QL đánh giá — 60%</span>  <span style="color:#64748b;font-size:12px">con người</span>
+&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="file-360">📄 Kho đánh giá — 40%</span>  <span style="color:#64748b;font-size:12px">con người</span>
+      </div>
+      <div class="col" style="gap:20px">
+        <div style="background:#f8f6f2; border-radius:14px; padding:24px;">
+          <div style="font-size:13px; font-weight:600; color:var(--stone); margin-bottom:14px; letter-spacing:1px; text-transform:uppercase;">Cách tính điểm</div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+              <span>Kết quả giao/nhập</span>
+              <span style="font-weight:700; color:var(--green)">82 × 50%</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+              <span>Chất lượng & An toàn</span>
+              <span style="font-weight:700; color:var(--green)">75 × 30%</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+              <span>Thái độ</span>
+              <span style="font-weight:700; color:var(--green)">88 × 20%</span>
+            </div>
+            <div class="divider-dark"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:18px; font-weight:800; color:var(--navy);">
+              <span>Tổng điểm</span>
+              <span>80.6 / 100</span>
+            </div>
+          </div>
+        </div>
+        <div style="background:#f8f6f2; border-radius:14px; padding:20px;">
+          <div style="font-size:13px; font-weight:600; color:var(--stone); margin-bottom:12px; letter-spacing:1px; text-transform:uppercase;">Chú thích màu</div>
+          <div class="legend">
+            <div class="legend-item"><div class="legend-dot" style="background:#86efac"></div><span style="font-size:14px">Tự động từ hệ thống</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#fca5a5"></div><span style="font-size:14px">Sự kiện (khen/chê)</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#c4b5fd"></div><span style="font-size:14px">Con người đánh giá</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#fdba74"></div><span style="font-size:14px">Nhập tay</span></div>
+          </div>
+        </div>
+        <div style="background:var(--navy); border-radius:14px; padding:20px; color:white;">
+          <div style="font-size:14px; font-weight:600; color:var(--gold-light); margin-bottom:10px;">Linh hoạt theo từng phòng</div>
+          <div style="font-size:14px; opacity:0.7; line-height:1.6;">Kế toán cần "Tuân thủ quy định" — thêm vào. Biên tập cần "Chất lượng sáng tạo" — thêm vào. Mỗi phòng tự cấu hình, không cần xin phép hệ thống.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 5: VÍ DỤ THỰC TẾ ══ -->
+  <div class="slide s5">
+    <div class="slide-title">Minh họa thực tế</div>
+    <h2>Bảng điểm nhân viên — Nhìn vào là hiểu</h2>
+    <div class="two-col" style="gap:28px; align-items:start">
+      <!-- NV profile -->
+      <div class="col" style="gap:16px">
+        <div style="background:var(--navy); border-radius:16px; padding:24px; color:white; display:flex; gap:20px; align-items:center">
+          <div style="width:56px; height:56px; border-radius:50%; background:var(--gold); display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0">👷</div>
+          <div>
+            <div style="font-size:18px; font-weight:700">Nguyễn Văn A</div>
+            <div style="font-size:13px; opacity:0.5;">Phòng Giao hàng · Quý 1/2026</div>
+            <div style="margin-top:6px; display:flex; gap:8px; align-items:center;">
+              <span style="font-size:28px; font-weight:800; color:var(--gold-light)">80.6</span>
+              <div>
+                <div style="font-size:12px; opacity:0.5">/100 điểm</div>
+                <span style="font-size:12px; font-weight:700; background:rgba(134,239,172,0.2); color:#86efac; padding:2px 10px; border-radius:12px;">Xếp loại B+</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="background:white; border:1px solid #e5e2de; border-radius:14px; padding:20px;">
+          <div style="font-size:13px; font-weight:600; color:var(--stone); margin-bottom:14px; letter-spacing:1px; text-transform:uppercase;">Chi tiết theo nhóm</div>
+          <div class="score-bar-wrap">
+            <div class="score-bar-label"><span>📦 Kết quả giao/nhập <span style="font-size:11px;opacity:0.5">50%</span></span><span style="font-weight:700;color:var(--green)">82</span></div>
+            <div class="score-bar-bg"><div class="score-bar-fill" style="width:82%;background:#4ade80"></div></div>
+          </div>
+          <div class="score-bar-wrap" style="margin-top:12px">
+            <div class="score-bar-label"><span>🛡️ Chất lượng & An toàn <span style="font-size:11px;opacity:0.5">30%</span></span><span style="font-weight:700;color:#f59e0b">75</span></div>
+            <div class="score-bar-bg"><div class="score-bar-fill" style="width:75%;background:#f59e0b"></div></div>
+          </div>
+          <div class="score-bar-wrap" style="margin-top:12px">
+            <div class="score-bar-label"><span>🤝 Thái độ <span style="font-size:11px;opacity:0.5">20%</span></span><span style="font-weight:700;color:#4ade80">88</span></div>
+            <div class="score-bar-bg"><div class="score-bar-fill" style="width:88%;background:#4ade80"></div></div>
+          </div>
+        </div>
+      </div>
+      <!-- Events & Details -->
+      <div class="col" style="gap:14px">
+        <div style="background:#f8f6f2; border-radius:14px; padding:20px;">
+          <div style="font-size:13px; font-weight:600; color:var(--stone); margin-bottom:12px; letter-spacing:1px; text-transform:uppercase;">Sự kiện trong kỳ</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; gap:10px; align-items:flex-start; font-size:14px; padding:8px; background:var(--green-light); border-radius:8px;">
+              <span>⭐</span><div><strong>Khách khen</strong> — Giao nhanh, thái độ tốt<div style="font-size:12px;color:var(--stone)">15/02/2026 · nguồn: CRM</div></div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:flex-start; font-size:14px; padding:8px; background:var(--green-light); border-radius:8px;">
+              <span>⭐</span><div><strong>Sáng kiến</strong> — Đề xuất tối ưu lộ trình<div style="font-size:12px;color:var(--stone)">22/02/2026 · nguồn: nội bộ</div></div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:flex-start; font-size:14px; padding:8px; background:var(--red-light); border-radius:8px;">
+              <span>⚠️</span><div><strong>Hàng hỏng</strong> — Thùng bị móp khi vận chuyển<div style="font-size:12px;color:var(--stone)">08/03/2026 · nguồn: CRM</div></div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#f8f6f2; border-radius:14px; padding:20px;">
+          <div style="font-size:13px; font-weight:600; color:var(--stone); margin-bottom:12px; letter-spacing:1px; text-transform:uppercase;">Số liệu vận hành (tự động)</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div style="background:white; border-radius:8px; padding:12px; text-align:center;"><div style="font-size:24px; font-weight:800; color:var(--navy)">143</div><div style="font-size:12px; color:var(--stone)">Chuyến hoàn thành</div></div>
+            <div style="background:white; border-radius:8px; padding:12px; text-align:center;"><div style="font-size:24px; font-weight:800; color:var(--green)">91%</div><div style="font-size:12px; color:var(--stone)">Đúng hạn</div></div>
+            <div style="background:white; border-radius:8px; padding:12px; text-align:center;"><div style="font-size:24px; font-weight:800; color:var(--green)">100%</div><div style="font-size:12px; color:var(--stone)">Đúng địa chỉ</div></div>
+            <div style="background:white; border-radius:8px; padding:12px; text-align:center;"><div style="font-size:24px; font-weight:800; color:#f59e0b">1</div><div style="font-size:12px; color:var(--stone)">Sự cố hàng hỏng</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 6: 3 NGUỒN DỮ LIỆU ══ -->
+  <div class="slide s6">
+    <div class="slide-title">Cơ chế dữ liệu</div>
+    <h2>3 nguồn dữ liệu — Tự động là chính</h2>
+    <div class="sub">Hệ thống thu thập từ nơi dữ liệu đã tồn tại. QL không cần nhập liệu thêm cho phần tự động.</div>
+    <div style="display:flex; gap:16px; flex:1; align-items:stretch">
+      <div class="source-card s-auto">
+        <div class="s-icon">⚙️</div>
+        <div class="s-title" style="color:#86efac">Tự động từ hệ thống</div>
+        <div class="s-sub">~50–60% điểm số</div>
+        <div class="divider"></div>
+        <div class="s-example">
+          Đọc trực tiếp từ CRM/ERP:<br><br>
+          → Số đơn xử lý<br>
+          → Tỷ lệ đúng hạn<br>
+          → Số ticket giải quyết<br>
+          → Deadline báo cáo<br>
+          → Uptime hệ thống
+        </div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="source-card s-human">
+        <div class="s-icon">👥</div>
+        <div class="s-title" style="color:#c4b5fd">Con người đánh giá</div>
+        <div class="s-sub">~20–30% điểm số</div>
+        <div class="divider"></div>
+        <div class="s-example">
+          Nhận xét có cấu trúc:<br><br>
+          → QL trực tiếp chấm<br>
+          → Phòng liên quan đánh giá<br>
+          → Đồng nghiệp nhận xét<br>
+          → Nhân viên tự đánh giá<br>
+          → BGĐ đánh giá QL
+        </div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="source-card s-event">
+        <div class="s-icon">📢</div>
+        <div class="s-title" style="color:#fca5a5">Sự kiện ghi nhận</div>
+        <div class="s-sub">~15–25% điểm số</div>
+        <div class="divider"></div>
+        <div class="s-example">
+          Ghi lại theo thời gian thực:<br><br>
+          → Khách khen / phàn nàn<br>
+          → Sự cố vận hành<br>
+          → Sáng kiến cải tiến<br>
+          → Phần thưởng chiến dịch<br>
+          → Ghi nhận từ đồng nghiệp
+        </div>
+      </div>
+    </div>
+    <div class="bottom-note">Mọi sự kiện đều có người ghi nhận — không ẩn danh, có thể tra soát, chống vu khống.</div>
+  </div>
+
+  <!-- ══ SLIDE 7: AI HỖ TRỢ ══ -->
+  <div class="slide s7">
+    <div class="slide-title">Tính năng nâng cao</div>
+    <h2>AI hỗ trợ chấm điểm — QL luôn là người quyết định</h2>
+    <div class="sub">AI đọc dữ liệu vận hành và đề xuất điểm. Nhưng AI không được tự quyết định. QL phải duyệt trước khi điểm được tính.</div>
+    <div style="display:flex; gap:12px; flex:1; align-items:center; margin-bottom:24px">
+      <div class="flow-step">
+        <div class="f-icon-wrap" style="background:#dbeafe">🤖</div>
+        <div class="f-title">AI đọc dữ liệu</div>
+        <div class="f-desc">Đọc thông tin vận hành từ CRM/ERP (đơn hàng, sự cố, kết quả...)</div>
+      </div>
+      <div class="flow-arr">→</div>
+      <div class="flow-step">
+        <div class="f-icon-wrap" style="background:#f0fdf4">📊</div>
+        <div class="f-title">AI đề xuất điểm</div>
+        <div class="f-desc">Đề xuất điểm + giải thích lý do dựa trên tiêu chí phòng đã đặt ra</div>
+      </div>
+      <div class="flow-arr">→</div>
+      <div class="flow-step">
+        <div class="f-icon-wrap" style="background:#fef9c3">⏳</div>
+        <div class="f-title">Chờ QL duyệt</div>
+        <div class="f-desc">Kết quả ở trạng thái "chờ duyệt" — chưa tính vào điểm của NV</div>
+      </div>
+      <div class="flow-arr">→</div>
+      <div class="flow-step">
+        <div class="f-icon-wrap" style="background:#f0fdf4">✅</div>
+        <div class="f-title">QL review & duyệt</div>
+        <div class="f-desc">Chấp nhận, điều chỉnh, hoặc từ chối đề xuất của AI</div>
+      </div>
+      <div class="flow-arr">→</div>
+      <div class="flow-step">
+        <div class="f-icon-wrap" style="background:#fdf4ff">📋</div>
+        <div class="f-title">Tính vào bảng điểm</div>
+        <div class="f-desc">Chỉ sau khi QL xác nhận, điểm mới được ghi nhận chính thức</div>
+      </div>
+    </div>
+    <div class="rule-box">
+      <div class="icon">🔒</div>
+      <h3>Nguyên tắc bất di bất dịch</h3>
+      <p><strong>AI không bao giờ tự xác nhận kết quả.</strong> Mọi đề xuất của AI đều ở trạng thái "chờ duyệt". Quản lý là người ra quyết định cuối cùng — AI chỉ là công cụ hỗ trợ, không phải giám khảo.</p>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 8: LỢI ÍCH ══ -->
+  <div class="slide s8">
+    <div class="slide-title">Giá trị mang lại</div>
+    <h2>Lợi ích cho tổ chức</h2>
+    <div class="four-col" style="flex:1">
+      <div class="benefit-card b-green">
+        <div class="b-icon">⚖️</div>
+        <div class="b-title">Công bằng & Minh bạch</div>
+        <div class="b-desc">Mọi điểm số đều có dữ liệu nguồn. NV biết mình được chấm dựa trên gì — không còn "đánh giá theo cảm tính".</div>
+        <div class="b-metric" style="color:var(--green)">→ Giảm tranh cãi khi đánh giá cuối kỳ</div>
+      </div>
+      <div class="benefit-card b-blue">
+        <div class="b-icon">📈</div>
+        <div class="b-title">Dữ liệu ra quyết định</div>
+        <div class="b-desc">HĐQT và Ban Giám đốc có dữ liệu cụ thể để quyết định thưởng, thăng chức, đào tạo, hoặc cảnh báo.</div>
+        <div class="b-metric" style="color:#1d4ed8">→ Quyết định nhân sự có căn cứ, dễ bảo vệ</div>
+      </div>
+      <div class="benefit-card b-gold">
+        <div class="b-icon">🚀</div>
+        <div class="b-title">Tiết kiệm thời gian</div>
+        <div class="b-desc">60–70% điểm tính tự động từ hệ thống hiện có. QL chỉ cần review, không cần tổng hợp thủ công mỗi kỳ.</div>
+        <div class="b-metric" style="color:#92400e">→ Giảm 3–5 ngày công mỗi đợt đánh giá</div>
+      </div>
+      <div class="benefit-card b-purple">
+        <div class="b-icon">💡</div>
+        <div class="b-title">Phát hiện sớm vấn đề</div>
+        <div class="b-desc">Theo dõi liên tục giúp nhận ra sớm NV đang gặp khó khăn, hoặc phòng ban có vấn đề quy trình cần giải quyết.</div>
+        <div class="b-metric" style="color:#6d28d9">→ Phòng ngừa thay vì xử lý hậu quả</div>
+      </div>
+    </div>
+    <div style="margin-top:16px; background:#f8f6f2; border-radius:12px; padding:16px 24px; display:flex; gap:32px; justify-content:center; align-items:center;">
+      <div style="font-size:13px; color:var(--stone)">Hệ thống cũng hỗ trợ:</div>
+      <div style="display:flex; gap:16px; flex-wrap:wrap;">
+        <span style="font-size:13px; font-weight:600; background:white; border:1px solid #e5e2de; border-radius:20px; padding:4px 14px;">🎯 Campaign kích thưởng theo dịp</span>
+        <span style="font-size:13px; font-weight:600; background:white; border:1px solid #e5e2de; border-radius:20px; padding:4px 14px;">🤝 Ghi nhận từ đồng nghiệp</span>
+        <span style="font-size:13px; font-weight:600; background:white; border:1px solid #e5e2de; border-radius:20px; padding:4px 14px;">📊 Bảng điểm theo kỳ/năm</span>
+        <span style="font-size:13px; font-weight:600; background:white; border:1px solid #e5e2de; border-radius:20px; padding:4px 14px;">🔄 Đánh giá 360°</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 9: LỘ TRÌNH ══ -->
+  <div class="slide s9">
+    <div class="slide-title">Triển khai</div>
+    <h2>Lộ trình 3 giai đoạn</h2>
+    <div class="three-col" style="flex:1">
+      <div class="phase ph1">
+        <div class="ph-badge" style="color:#86efac">✓ Giai đoạn 1</div>
+        <div class="ph-title">Thử nghiệm</div>
+        <div class="ph-time">Tháng 1–2</div>
+        <div class="divider"></div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div class="ph-item">Chọn 1–2 phòng pilot (ưu tiên Giao hàng hoặc Bán hàng)</div>
+          <div class="ph-item">Chạy bằng Excel/Google Sheets</div>
+          <div class="ph-item">Xác định tiêu chí và trọng số thực tế</div>
+          <div class="ph-item">Thu thập phản hồi từ QL và NV</div>
+          <div class="ph-item">Kiểm chứng độ chính xác của khung</div>
+        </div>
+        <div style="margin-top:16px; padding:10px; background:rgba(134,239,172,0.1); border-radius:8px; font-size:13px; color:rgba(255,255,255,0.6);">
+          💰 Chi phí: Gần như bằng 0 — dùng công cụ có sẵn
+        </div>
+      </div>
+      <div class="phase ph2">
+        <div class="ph-badge" style="color:#93c5fd">⚡ Giai đoạn 2</div>
+        <div class="ph-title">Phần mềm & Tích hợp</div>
+        <div class="ph-time">Tháng 3–5</div>
+        <div class="divider"></div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div class="ph-item">Triển khai phần mềm + database</div>
+          <div class="ph-item">Kết nối tự động với CRM/ERP hiện có</div>
+          <div class="ph-item">Mở rộng ra tất cả các phòng ban</div>
+          <div class="ph-item">UI bảng điểm cho NV và QL</div>
+          <div class="ph-item">Báo cáo tổng hợp cho BGĐ</div>
+        </div>
+        <div style="margin-top:16px; padding:10px; background:rgba(147,197,253,0.1); border-radius:8px; font-size:13px; color:rgba(255,255,255,0.6);">
+          💰 Chi phí: Chi phí phát triển 1 lần
+        </div>
+      </div>
+      <div class="phase ph3">
+        <div class="ph-badge" style="color:var(--gold-light)">🚀 Giai đoạn 3</div>
+        <div class="ph-title">AI & Tối ưu hóa</div>
+        <div class="ph-time">Tháng 6+</div>
+        <div class="divider"></div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div class="ph-item">Bật tính năng AI đề xuất điểm</div>
+          <div class="ph-item">Quan sát độ chính xác 1–2 tháng</div>
+          <div class="ph-item">Hiệu chỉnh tiêu chí theo thực tế</div>
+          <div class="ph-item">Campaign kích thưởng theo dịp</div>
+          <div class="ph-item">Phân tích xu hướng nhân sự toàn công ty</div>
+        </div>
+        <div style="margin-top:16px; padding:10px; background:rgba(201,146,42,0.1); border-radius:8px; font-size:13px; color:rgba(255,255,255,0.6);">
+          💰 Chi phí: Chi phí vận hành AI API
+        </div>
+      </div>
+    </div>
+    <div class="bottom-note">
+      <span>⚡</span>
+      <span>Có thể bắt đầu Giai đoạn 1 ngay tuần tới mà không cần đầu tư thêm gì.</span>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 10: NGUYÊN TẮC ══ -->
+  <div class="slide s10">
+    <div class="slide-title">Cam kết</div>
+    <h2>Những điều hệ thống không bao giờ làm</h2>
+    <div class="two-col" style="gap:32px; flex:1; align-items:start">
+      <div>
+        <div class="rule-item">
+          <div class="rule-num">1</div>
+          <div class="rule-text"><strong>Không đánh giá ẩn danh</strong> — Mọi nhận xét đều có người ghi nhận cụ thể. Chống vu khống.</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-num">2</div>
+          <div class="rule-text"><strong>Không để AI tự quyết định</strong> — AI chỉ đề xuất, QL luôn là người xác nhận cuối cùng.</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-num">3</div>
+          <div class="rule-text"><strong>Không gắn điểm vào lương ngay</strong> — Phải có 1–2 tháng quan sát, kiểm chứng trước khi ảnh hưởng đến thu nhập.</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-num">4</div>
+          <div class="rule-text"><strong>Không xếp hạng công khai bottom</strong> — Không hiển thị ai đứng cuối danh sách trước mặt đồng nghiệp.</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-num">5</div>
+          <div class="rule-text"><strong>Không gamify việc nghiêm túc</strong> — Tai nạn, sự cố an toàn không bao giờ được gắn vào trò chơi điểm thưởng.</div>
+        </div>
+      </div>
+      <div class="promise-box">
+        <div class="promise-icon">🤝</div>
+        <div class="promise-title">Hệ thống cam kết</div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div class="promise-item"><span>✓</span> NV biết mình bị đánh giá dựa trên tiêu chí gì</div>
+          <div class="promise-item"><span>✓</span> NV xem được điểm và lý do cụ thể</div>
+          <div class="promise-item"><span>✓</span> Có quy trình phản đối nếu thấy sai sót</div>
+          <div class="promise-item"><span>✓</span> Tiêu chí thay đổi phải thông báo trước</div>
+          <div class="promise-item"><span>✓</span> Lịch sử đánh giá được lưu trữ, có thể tra soát</div>
+        </div>
+        <div style="margin-top:20px; padding:16px; background:rgba(201,146,42,0.15); border:1px solid rgba(201,146,42,0.25); border-radius:10px;">
+          <div style="font-size:13px; color:var(--gold-light); font-weight:600; margin-bottom:6px;">Triết lý cốt lõi</div>
+          <div style="font-size:14px; opacity:0.7; line-height:1.5;">Hệ thống giúp QL <strong style="color:white">nói được</strong> những gì họ đã biết — không phải thay thế sự hiểu biết của con người bằng con số.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 11: CLOSING ══ -->
+  <div class="slide s11">
+    <div class="top">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="width:32px; height:32px; background:var(--gold); border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:16px;">📊</div>
+        <div style="font-size:13px; opacity:0.4; letter-spacing:1px;">NỘI BỘ · HĐQT</div>
+      </div>
+    </div>
+    <div class="mid">
+      <div class="tag-line">Tóm lại</div>
+      <h1>Bắt đầu ngay,<br><span class="accent">không cần chờ</span><br>công nghệ hoàn hảo.</h1>
+      <div class="sub">Dữ liệu đã có. Khung đã sẵn. Chỉ cần quyết định bắt đầu từ 1 phòng — toàn bộ hệ thống sẽ dần rõ hình hài trong 2 tháng đầu.</div>
+      <div class="contact" style="margin-top:28px">
+        <div class="contact-item">
+          <div class="c-label">Bước tiếp theo</div>
+          <div class="c-val">Chọn phòng pilot</div>
+        </div>
+        <div style="width:1px; background:rgba(255,255,255,0.1)"></div>
+        <div class="contact-item">
+          <div class="c-label">Thời gian cần</div>
+          <div class="c-val">1–2 tuần setup Excel</div>
+        </div>
+        <div style="width:1px; background:rgba(255,255,255,0.1)"></div>
+        <div class="contact-item">
+          <div class="c-label">Chi phí Giai đoạn 1</div>
+          <div class="c-val">Gần bằng 0</div>
+        </div>
+      </div>
+    </div>
+    <div class="bottom">
+      <div class="b-note">Hệ thống Đánh giá Nhân viên · Tài liệu nội bộ · 2026</div>
+      <div style="color:rgba(255,255,255,0.35); font-size:14px;">Cảm ơn HĐQT đã lắng nghe</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- CONTROLS -->
+<div id="controls">
+  <button class="btn" onclick="changeSlide(-1)">← Trước</button>
+  <span id="progress">1 / 11</span>
+  <button class="btn" onclick="changeSlide(1)">Tiếp →</button>
+  <span style="margin-left:12px">hoặc dùng ← → để điều hướng</span>
+  <span style="margin-left:auto; opacity:0.5">F11 để toàn màn hình</span>
+</div>
+
+<script>
+  let current = 0;
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+
+  function showSlide(n) {
+    slides[current].classList.remove('active');
+    current = (n + total) % total;
+    slides[current].classList.add('active');
+    document.getElementById('progress').textContent = (current + 1) + ' / ' + total;
+  }
+
+  function changeSlide(dir) { showSlide(current + dir); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') changeSlide(1);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') changeSlide(-1);
+  });
+</script>
+</body>
+</html>

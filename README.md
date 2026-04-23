@@ -20,7 +20,7 @@ Hệ thống được thiết kế để:
 eval_system_package/
 ├── README.md                                    # File này
 ├── docs/
-│   ├── 01-triet-ly-va-khung-danh-gia.md        # Triết lý + Standard Pillar Library
+│   ├── 01-triet-ly-va-khung-danh-gia.md        # Triết lý + CriterionTree (file/folder model)
 │   ├── 02-template-va-versioning.md            # Cách template hoạt động
 │   ├── 03-su-vu-va-ghi-nhan.md                 # Module sự vụ / incidents
 │   ├── 04-khai-quat-hoa-cong-viec.md           # Work Unit catalog + điểm công
@@ -41,8 +41,8 @@ eval_system_package/
 
 | File | Nội dung |
 |------|----------|
-| [01 — Triết lý & Standard Pillar Library](docs/01-triet-ly-va-khung-danh-gia.md) | Why của hệ thống, N-pillar linh hoạt, so sánh OKR/BSC |
-| [02 — Template & Versioning](docs/02-template-va-versioning.md) | Cách template hoạt động, version lifecycle |
+| [01 — Triết lý & CriterionTree](docs/01-triet-ly-va-khung-danh-gia.md) | Why của hệ thống, mô hình file/folder, so sánh OKR/BSC |
+| [02 — Template & Versioning](docs/02-template-va-versioning.md) | Cách CriterionTree có versioning và publish workflow |
 | [03 — Sự vụ & Ghi nhận](docs/03-su-vu-va-ghi-nhan.md) | Module incidents, event categories, trạng thái |
 | [04 — Khái quát hóa Công việc](docs/04-khai-quat-hoa-cong-viec.md) | Work Unit catalog, điểm công, đa phòng ban |
 | [05 — Tích hợp CRM/ERP](docs/05-tich-hop-crm-erp.md) | Side-by-side integration pattern |
@@ -62,7 +62,7 @@ eval_system_package/
 ## Đọc gì trước?
 
 **Nếu bạn là Product Owner / Quản lý:**
-1. [Triết lý & Standard Pillar Library](docs/01-triet-ly-va-khung-danh-gia.md) — hiểu why, N-pillar linh hoạt
+1. [Triết lý & CriterionTree](docs/01-triet-ly-va-khung-danh-gia.md) — hiểu why, mô hình file/folder
 2. [Khái quát hóa Công việc](docs/04-khai-quat-hoa-cong-viec.md) — cách mô hình hóa công việc đặc thù
 3. [Campaign & Peer Recognition](docs/06-campaign-kich-hoat-tinh-than.md) — kích hoạt tinh thần đội ngũ theo dịp
 4. [AI Evaluation & Criteria](docs/07-ai-evaluation-va-criteria.md) — cách viết tiêu chí để AI chấm điểm
@@ -86,7 +86,7 @@ eval_system_package/
 
 **Nếu bạn implement AI Evaluation Engine:**
 1. [AI Evaluation & Criteria](docs/07-ai-evaluation-va-criteria.md) — triết lý, cấu trúc criteria, ví dụ 3 phòng
-2. [data-model.md](spec/data-model.md) phần `EvaluationCriteria`, `AIEvaluation`
+2. [data-model.md](spec/data-model.md) phần `CriterionNode` (eval_type=ai), `AIEvaluation`
 3. [business-rules.md](spec/business-rules.md) mục 15 — AI evaluation lifecycle, accuracy phase
 
 ## Kiến trúc tổng quan
@@ -110,29 +110,36 @@ eval_system_package/
 └─────────────────────┘
 ```
 
-## Triết lý đánh giá: Standard Pillar Library
+## Khung đánh giá: CriterionTree — Mô hình file/folder
 
-Mọi nhân viên ở mọi phòng đều được đánh giá theo cùng **ngôn ngữ** — bộ Standard Pillar Library. Mỗi template phòng chọn 2–6 pillar từ library đó, tự quyết trọng số (tổng = 100%).
+Mỗi phòng ban xây dựng **CriterionTree** của riêng mình — một cây tiêu chí theo mô hình file/folder. Không có lớp "Pillar Library" bắt buộc ở giữa.
 
-**Default set (phòng mới dùng mặc định):**
+```
+Phòng Giao hàng
+├── Folder: Kết quả (50%)
+│     ├── File: Số đơn giao (60% | quantitative — tự động từ CRM)
+│     └── File: Tỷ lệ đúng hạn (40% | quantitative)
+├── Folder: Chất lượng (30%)
+│     ├── File: Phản hồi khách (50% | event)
+│     └── File: Đánh giá QL (50% | qualitative_360)
+└── File: Tuân thủ (20% | manual)
+```
 
-| Pillar | Trọng số mặc định | Nguồn dữ liệu |
-|--------|-------------------|---------------|
-| **Kết quả định lượng** | 50% | Work logs (tự động từ CRM/ERP) |
-| **Chất lượng & Thái độ** | 30% | Đánh giá 360° (QL + đồng nghiệp + phòng liên quan) |
-| **Phản hồi & Sự cố** | 20% | Events (khách khen/phàn nàn, sự cố, sáng kiến) |
+- **Folder**: nhóm tiêu chí, điểm = trung bình có trọng số của con
+- **File / Leaf**: tiêu chí đo thực sự, có `eval_type` xác định nguồn dữ liệu
+- **Weight**: % so với anh em cùng cấp, siblings cộng lại = 100%
+- **Scoring**: leaf → folder → root → tổng điểm phòng (công thức: `Σ child.score × child.weight / 100`)
 
-**Library đầy đủ (phòng đặc thù có thể chọn thêm hoặc thay thế):**
+**Preset Library — Thư viện tiêu chí mẫu (tuỳ chọn):**
 
-| Pillar ID | Tên | Phù hợp với |
-|-----------|-----|-------------|
-| `QUANTITATIVE` | Kết quả định lượng | Giao hàng, Kho, Bảo hành, Kế toán |
-| `QUALITY_360` | Chất lượng & Thái độ | Mọi phòng |
-| `FEEDBACK` | Phản hồi & Sự cố | Phòng tiếp xúc khách |
-| `SKILL_MASTERY` | Năng lực chuyên môn | Kỹ thuật, Bảo hành |
-| `COMPLIANCE` | Tuân thủ & An toàn | An toàn lao động, Tài chính |
-| `LEARNING` | Đào tạo & Phát triển | Mọi phòng muốn đo learning |
-| `INNOVATION` | Sáng kiến & Cải tiến | R&D, kỹ thuật cấp cao |
+| Preset | Phù hợp với | Cấu trúc mặc định |
+|--------|-------------|-------------------|
+| Giao hàng chuẩn | Delivery, logistics | Kết quả (50%) + Chất lượng (30%) + Tuân thủ (20%) |
+| Kho chuẩn | Warehouse | Kết quả (45%) + Độ chính xác (35%) + An toàn (20%) |
+| Bảo hành chuẩn | Kỹ thuật, field service | Kết quả (35%) + Tay nghề (25%) + Chất lượng (25%) + Phản hồi (15%) |
+| Kế toán chuẩn | Finance | Độ chính xác (40%) + Tiến độ (30%) + Tuân thủ (20%) + Phát triển (10%) |
+
+Preset là điểm khởi đầu nhanh — phòng copy preset rồi chỉnh thoải mái, hoặc xây từ đầu. Không bắt buộc phải theo preset.
 
 Xem chi tiết và so sánh với OKR/Balanced Scorecard tại [docs/01](docs/01-triet-ly-va-khung-danh-gia.md).
 
@@ -169,7 +176,7 @@ Xem chi tiết tại [docs/07](docs/07-ai-evaluation-va-criteria.md).
 
 ## Nguyên tắc không được phá vỡ
 
-1. **Pillar Library là ngôn ngữ chung** — pillar mới phải qua library, không tự đặt tên ngoài library
+1. **CriterionTree là đơn vị cấu hình** — mỗi phòng có tree riêng, versioned, immutable khi active
 2. **External ID là trái tim** — mọi tham chiếu cross-system qua external_id, không qua tên
 3. **Idempotent APIs** — gửi cùng event 10 lần = 1 lần
 4. **Published version không sửa** — chỉ tạo version mới (template, criteria, đều thế)

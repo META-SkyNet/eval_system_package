@@ -50,7 +50,7 @@ Khuyên dùng: Node.js + Express/Fastify hoặc Python + FastAPI, Postgres, Redi
 
 Đọc theo thứ tự:
 1. `docs/07-ai-evaluation-va-criteria.md` — triết lý, cấu trúc criteria, ví dụ 3 phòng
-2. `spec/data-model.md` phần `EvaluationCriteria`, `ScoringRule`, `AIEvaluation`
+2. `spec/data-model.md` phần `CriterionNode` (eval_type=ai), `AIEvaluation`
 3. `spec/api-specification.md` phần "Nhóm endpoints: AI Evaluation"
 4. `spec/business-rules.md` mục 15
 
@@ -66,17 +66,16 @@ Dùng 2 artifact JSX làm reference. Stack: React + TailwindCSS + Lucide icons, 
 
 ### "Mở rộng feature mới"
 
-Trước khi thêm, kiểm tra "Nguyên tắc không được phá vỡ" trong `README.md`. Feature mới phải tương thích với các nguyên tắc: Pillar Library là ngôn ngữ chung, idempotent API, version immutability, AI là trợ lý không phải giám khảo.
+Trước khi thêm, kiểm tra "Nguyên tắc không được phá vỡ" trong `README.md`. Feature mới phải tương thích với các nguyên tắc: CriterionTree là đơn vị cấu hình, idempotent API, version immutability, AI là trợ lý không phải giám khảo.
 
 ## Terminology (Tiếng Việt ↔ English)
 
 | Tiếng Việt | English | Ghi chú |
 |-----------|---------|---------|
-| Trụ cột | Pillar | 2–6 pillars/template, chọn từ Standard Pillar Library |
-| Thư viện trụ cột | Pillar Library | Bộ định nghĩa pillar dùng chung toàn tổ chức |
+| Cây tiêu chí | CriterionTree | Cây tiêu chí đánh giá của phòng, có versioning |
+| Tiêu chí / Node | CriterionNode | Node trong cây — folder (nhóm) hoặc leaf (đo thực sự) |
+| Thư viện mẫu | Preset Library | Bộ cây mẫu tuỳ chọn — không bắt buộc |
 | Sự vụ | Event / Incident | Khen, phàn nàn, sự cố, sáng kiến... |
-| Loại công việc | Work Unit Type | Đơn vị trong catalog của phòng |
-| Điểm công | Work Points / Effort Points | Độ nặng của 1 loại công việc |
 | Bảng điểm | Scorecard | Tổng hợp điểm của NV trong kỳ |
 | Phòng ban | Department | |
 | Nhân viên | Employee | |
@@ -88,7 +87,7 @@ Trước khi thêm, kiểm tra "Nguyên tắc không được phá vỡ" trong `
 | Ăn mừng cột mốc | Milestone Celebration | Loại campaign |
 | Thử thách kỹ năng | Skill Challenge | Loại campaign |
 | Buổi tổng kết | Ending Ritual | Bắt buộc khi close campaign |
-| Tiêu chí AI | Evaluation Criteria | JSON ruleset gắn với WorkUnitType để AI chấm |
+| Tiêu chí AI | Evaluation Criteria | Cấu hình chấm điểm gắn với CriterionNode (eval_type=ai) |
 | Chấm điểm AI | AI Evaluation | Kết quả AI chấm một công việc, luôn ở pending |
 | Dấu hiệu bất thường | Red Flag | Pattern AI phát hiện, cần human review riêng |
 

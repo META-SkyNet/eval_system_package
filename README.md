@@ -48,6 +48,7 @@ eval_system_package/
 | [05 — Tích hợp CRM/ERP](docs/05-tich-hop-crm-erp.md) | Side-by-side integration pattern |
 | [06 — Campaign & Peer Recognition](docs/06-campaign-kich-hoat-tinh-than.md) | Event-based motivation, giới hạn đạo đức |
 | [07 — AI Evaluation & Criteria](docs/07-ai-evaluation-va-criteria.md) | AI chấm điểm từ JSON nghiệp vụ, criteria versioning, pilot workflow |
+| [System Diagrams](docs/system-diagrams.md) | Mermaid diagrams: ERD, scoring pipeline, state machines, sequence diagrams |
 
 ### Spec — Kỹ thuật
 

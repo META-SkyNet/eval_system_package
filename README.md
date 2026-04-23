@@ -26,7 +26,9 @@ eval_system_package/
 │   ├── 04-khai-quat-hoa-cong-viec.md           # Work Unit catalog + điểm công
 │   ├── 05-tich-hop-crm-erp.md                  # Side-by-side integration
 │   ├── 06-campaign-kich-hoat-tinh-than.md      # Campaign + peer recognition
-│   └── 07-ai-evaluation-va-criteria.md         # AI chấm điểm từ JSON nghiệp vụ
+│   ├── 07-ai-evaluation-va-criteria.md         # AI chấm điểm từ JSON nghiệp vụ
+│   ├── 08-criterion-tree-examples.md           # 30 template mẫu (10 phòng × NV/QL/Team)
+│   └── 09-hieu-chuan.md                        # Hiệu chuẩn: calibration period, 3-kỳ analysis
 ├── spec/
 │   ├── data-model.md                           # Entities, relationships, constraints
 │   ├── api-specification.md                    # REST API contract đầy đủ
@@ -49,6 +51,7 @@ eval_system_package/
 | [06 — Campaign & Peer Recognition](docs/06-campaign-kich-hoat-tinh-than.md) | Event-based motivation, giới hạn đạo đức |
 | [07 — AI Evaluation & Criteria](docs/07-ai-evaluation-va-criteria.md) | AI chấm điểm từ JSON nghiệp vụ, criteria versioning, pilot workflow |
 | [08 — Ví dụ CriterionTree theo Phòng](docs/08-criterion-tree-examples.md) | Template NV/QL/Team cho 10 phòng ban (Bán hàng, Kho, Giao hàng...) |
+| [09 — Hiệu chuẩn hệ thống](docs/09-hieu-chuan.md) | Calibration period, distribution analysis, thuật toán 3 kỳ, CalibrationProposal |
 | [System Diagrams](docs/system-diagrams.md) | Mermaid diagrams: ERD, scoring pipeline, state machines, sequence diagrams |
 
 ### Spec — Kỹ thuật
@@ -67,7 +70,8 @@ eval_system_package/
 2. [Khái quát hóa Công việc](docs/04-khai-quat-hoa-cong-viec.md) — cách mô hình hóa công việc đặc thù
 3. [Campaign & Peer Recognition](docs/06-campaign-kich-hoat-tinh-than.md) — kích hoạt tinh thần đội ngũ theo dịp
 4. [AI Evaluation & Criteria](docs/07-ai-evaluation-va-criteria.md) — cách viết tiêu chí để AI chấm điểm
-5. Chạy artifact [`artifacts/evaluation_template_system.jsx`](artifacts/evaluation_template_system.jsx) để thấy UI
+5. [Hiệu chuẩn hệ thống](docs/09-hieu-chuan.md) — quy trình chỉnh target/trọng số sau vài kỳ thực tế
+6. Chạy artifact [`artifacts/evaluation_template_system.jsx`](artifacts/evaluation_template_system.jsx) để thấy UI
 
 **Nếu bạn là Developer Backend:**
 1. [data-model.md](spec/data-model.md) — entities, relationships, fields

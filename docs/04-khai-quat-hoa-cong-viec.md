@@ -15,6 +15,110 @@ Giải pháp của hệ thống: không tạo catalog loại công việc riêng
 
 ---
 
+## Mô hình khái quát hóa công việc
+
+Bất kỳ công việc nào — dù ở phòng ban nào, loại hình nào — đều có thể biểu diễn qua **5 chiều**:
+
+| Chiều | Field | Ý nghĩa |
+|-------|-------|---------|
+| **Ai làm** | `employee_id` | Nhân viên thực hiện |
+| **Làm gì** | `criterion_node_id` | Loại công việc — leaf node trong CriterionTree của phòng |
+| **Bao nhiêu** | `quantity` | Thể tích — số đơn vị hoàn thành (> 0) |
+| **Tốt không** | `score` | Chất lượng — điểm 0–100 sau normalize (tùy chọn khi gửi) |
+| **Khi nào** | `logged_at` | Thời điểm thực hiện |
+
+Đây là **phép khái quát hóa cốt lõi**: dù công việc là giao hàng, kế toán, IT hay biên tập — cuối cùng đều rút gọn về cùng 5 trường này để so sánh, tổng hợp và chấm điểm nhất quán trên toàn công ty.
+
+### Pipeline khái quát hóa
+
+```
+Sự kiện thực tế (CRM / ERP)
+         │
+         ▼  ánh xạ qua external_ref → criterion_node_id
+     WorkLog
+  [employee_id × criterion_node_id × quantity × score? × logged_at]
+         │
+         ▼  normalize formula (từ description của leaf)
+    Leaf Score  0–100
+         │
+         ▼  Σ quantity-weighted mean (nhiều WorkLog cùng leaf trong kỳ)
+  Leaf Score (kỳ)
+         │
+         ▼  × weight, cộng anh em trong folder
+   Folder Score
+         │
+         ▼  × weight, cộng anh em lên root
+    Tree Score
+         │
+         ▼
+     Scorecard
+```
+
+### Tính phổ quát — 4 phòng, 1 mô hình
+
+| Phòng | Sự kiện thực | WorkLog nhận |
+|-------|-------------|-------------|
+| Giao hàng | Đơn #00812 hoàn thành | `external_ref=delivery_trip_count`, quantity=1 |
+| Kế toán | Báo cáo tháng 4 nộp đúng hạn | `external_ref=accounting_report_ontime`, quantity=8, score=88 |
+| IT | Ticket INC-2891 đóng trong SLA | `external_ref=it_ticket_within_sla`, quantity=1 |
+| Kho | 48 pallet nhập, 3 lỗi sai vị trí | `external_ref=warehouse_pick_accuracy`, quantity=48, score=94 |
+
+Cùng endpoint `POST /work-events`, cùng schema, cùng pipeline tính điểm.
+
+---
+
+## Các mẫu khái quát hóa nâng cao
+
+### Một sự kiện thực → nhiều WorkLog
+
+Một chuyến giao hàng chạm đến nhiều chiều đo khác nhau. CRM gửi 3 lần với cùng đơn nhưng `external_ref` khác nhau:
+
+```json
+{ "external_ref": "delivery_trip_count",   "quantity": 1, "external_id": "trip_001_vol",  "source": "crm" }
+{ "external_ref": "delivery_ontime_rate",  "quantity": 1, "score": 100, "external_id": "trip_001_time", "source": "crm" }
+{ "external_ref": "delivery_damage_check", "quantity": 1, "score": 95,  "external_id": "trip_001_safe", "source": "crm" }
+```
+
+Mỗi chiều đo (thể tích, đúng hạn, an toàn) → leaf riêng → weight riêng → tổng hợp theo cây. Không cần thay đổi cấu trúc leaf để thêm chiều đo mới.
+
+### Độ phức tạp qua quantity
+
+Không phải mọi đơn vị công việc đều như nhau. Hệ thống cho phép CRM mã hóa độ phức tạp qua `quantity`:
+
+| Loại công việc | quantity | Lý do |
+|---------------|----------|-------|
+| Giao đơn nhỏ (document) | 1 | Chuẩn |
+| Giao + lắp đặt điều hòa | 3 | Tương đương 3 chuyến thường về công sức |
+| Giao nội thành | 1 | Chuẩn |
+| Giao liên tỉnh | 2 | Xa hơn, nặng hơn |
+
+Khi tổng hợp cuối kỳ, `quantity` đóng vai trọng số trong weighted mean:
+
+```
+leaf_score = Σ(score × quantity) / Σ(quantity)
+```
+
+CRM phản ánh được mức độ khó khác nhau của từng đơn mà không cần thay đổi cấu hình leaf node.
+
+### Chấm điểm trễ (delayed scoring)
+
+Một số công việc chỉ biết kết quả sau thời gian: giao hàng xong 3 ngày sau khách mới feedback, ticket đóng 24h sau khách đánh giá, báo cáo nộp cuối tháng mới audit.
+
+WorkLog hỗ trợ pattern này: CRM gửi trước không có `score`, sau đó UPDATE bằng cùng `external_id` khi có kết quả:
+
+```json
+// Lần 1: giao xong, chưa có feedback
+{ "external_id": "trip_001_qual", "external_ref": "delivery_quality", "quantity": 1 }
+
+// 3 ngày sau: khách đánh giá 4/5 sao
+{ "external_id": "trip_001_qual", "external_ref": "delivery_quality", "quantity": 1, "score": 80 }
+// → UPDATE record cũ (idempotency key), không tạo bản mới
+```
+
+`logged_at` giữ nguyên thời điểm giao hàng. `score` được cập nhật khi có feedback. Scorecard tính theo `score` cuối cùng trong kỳ.
+
+---
+
 ## Leaf node với eval_type=quantitative
 
 Mỗi "loại công việc" định lượng của một phòng được biểu diễn là một leaf node trong CriterionTree của phòng đó, với `eval_type = "quantitative"`.

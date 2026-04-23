@@ -100,6 +100,7 @@ type CriterionTree = {
   version: number;              // 1, 2, 3, ... monotonic
   status: "draft" | "active" | "archived";
   activatedAt?: ISO8601;        // Thời điểm chuyển sang active
+  calibrationNotes?: string;    // Ghi chú thay đổi so với version trước (cho audit)
   createdBy: string;            // FK → Employee
   createdAt: ISO8601;
 };
@@ -130,16 +131,42 @@ type CriterionNode = {
     | "event"                   // tính từ events confirmed
     | "manual"                  // QL nhập trực tiếp
     | "ai";                     // AI chấm từ input_data JSON
-  description?: string;
+  description?: string;         // Mô tả cho người dùng — không dùng để tính điểm
+  scoringConfig?: ScoringConfig; // Chỉ dùng khi evalType = "quantitative"
   sortOrder: number;            // Thứ tự hiển thị trong cùng cha
   externalRef?: string;         // Tag tuỳ chọn để map với CRM/ERP field
   createdAt: ISO8601;
+};
+
+type ScoringConfig = {
+  formula: "target_based" | "ratio" | "passthrough";
+  // target_based : volume_score = clamp(Σ điểm_công / target_points × 100, floor, cap)
+  // ratio        : volume_score = Σ(score × điểm_công) / Σ điểm_công  (logs phải có score)
+  // passthrough  : volume_score = score của WorkLog cuối kỳ (CRM tự tính gửi 1 lần)
+
+  base_unit_points: number;     // Điểm công mặc định mỗi đơn vị (default: 1)
+  target_points: number;        // Mục tiêu điểm công/kỳ (VD: 200)
+  unit: string;                 // Đơn vị hiển thị: "chuyến", "pallet", "ticket"
+
+  cap: number;                  // Điểm tối đa (default: 100)
+  floor: number;                // Điểm tối thiểu (default: 0)
+
+  no_data_policy: "zero" | "exclude" | "neutral";
+  // zero    : không làm = 0 điểm (tiêu chí bắt buộc)
+  // exclude : loại khỏi tính toán, phân bổ lại weight cho anh em
+  // neutral : 50 điểm (không phạt, không thưởng)
+
+  quality_weight: number;       // 0–100: % điểm lá từ quality vs. volume
+  // 0  = thuần volume (chỉ đếm điểm công)
+  // 30 = 70% volume + 30% quality (trung bình điểm từng WorkLog)
+  // 100 = thuần quality (bỏ qua thể tích)
 };
 ```
 
 **Constraints:**
 - Nếu `isLeaf = false`: `evalType` phải null
 - Nếu `isLeaf = true`: `evalType` phải thuộc enum trên
+- `scoringConfig` bắt buộc khi `evalType = "quantitative"`, null khi eval_type khác
 - Tất cả siblings (cùng `parentId` trong cùng `treeId`) phải có Σ weight = 100
 - Root siblings (cùng `treeId`, `parentId = null`) cũng phải Σ weight = 100
 - Không quá 4 cấp depth (root = level 1)
@@ -159,6 +186,7 @@ type EvalPeriod = {
   periodStart: Date;
   periodEnd: Date;
   criterionTreeId: string;      // FK → CriterionTree (phải là active hoặc archived)
+  mode: "calibration" | "official";  // calibration = tính điểm nhưng không có hậu quả HR
   status: "open" | "closed" | "finalized";
   createdAt: ISO8601;
 };
@@ -182,9 +210,10 @@ type WorkLog = {
   criterionNodeId: string;      // FK → CriterionNode (phải là leaf, eval_type=quantitative)
   externalId?: string;          // Từ CRM/ERP, dùng cho idempotency
   source?: string;              // "manual" | "crm" | "erp"
-  quantity: number;             // Số lượng đơn vị (thường 1)
+  quantity: number;             // Số lượng đơn vị (thường 1, > 0)
+  unitPoints?: number;          // Điểm công mỗi đơn vị — override leaf.scoringConfig.base_unit_points
   unit?: string;                // "đơn", "km", "ca", ...
-  score?: number;               // 0-100 normalized, tính hoặc cung cấp sẵn
+  score?: number;               // 0-100 normalized, tính hoặc cung cấp sẵn (quality)
   rawData?: object;             // JSON gốc từ CRM/ERP
   loggedAt: ISO8601;
   createdAt: ISO8601;

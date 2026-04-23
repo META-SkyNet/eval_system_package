@@ -8,18 +8,70 @@ Mỗi leaf node có `eval_type` xác định cách tính điểm. Kết quả lu
 
 ### eval_type = "quantitative"
 
-Lấy tất cả WorkLog của NV trong kỳ, filter theo `criterion_node_id = leaf.id`:
+Tính điểm dựa trên **điểm công tích lũy** trong kỳ, theo `leaf.scoringConfig`:
 
 ```python
 logs = WorkLog where employee_id = X and period_id = P and criterion_node_id = leaf.id
+cfg  = leaf.scoringConfig  # ScoringConfig — bắt buộc với eval_type="quantitative"
 
-if all logs have score field:
-    # Tính trung bình có trọng số theo quantity
-    leaf_score = Σ(log.score × log.quantity) / Σ(log.quantity)
+# --- Không có WorkLog nào ---
+if not logs:
+    return {"zero": 0, "exclude": None, "neutral": 50}[cfg.no_data_policy]
+
+# --- Bước 1: Điểm công mỗi log ---
+# unitPoints trên WorkLog override base_unit_points của leaf
+for log in logs:
+    log.earned = log.quantity × (log.unitPoints ?? cfg.base_unit_points ?? 1)
+
+total_earned = Σ(log.earned for log in logs)
+
+# --- Bước 2: Volume score (dựa trên điểm công tích lũy) ---
+if cfg.formula == "target_based":
+    # So sánh điểm công thực tế với mục tiêu
+    volume_score = clamp(total_earned / cfg.target_points × 100, cfg.floor, cfg.cap)
+
+elif cfg.formula == "ratio":
+    # Mỗi log có score — weighted mean theo earned points
+    scored = [l for l in logs if l.score is not None]
+    volume_score = Σ(l.score × l.earned for l in scored) / Σ(l.earned for l in scored)
+
+elif cfg.formula == "passthrough":
+    # CRM tự tính và gửi score — dùng WorkLog cuối kỳ
+    volume_score = max(logs, key=lambda l: l.loggedAt).score
+
+# --- Bước 3: Quality score + kết hợp (nếu quality_weight > 0) ---
+q = cfg.quality_weight / 100   # 0.0 → 1.0
+v = 1 - q
+
+if q > 0:
+    scored = [l for l in logs if l.score is not None]
+    if scored:
+        quality_score = Σ(l.score × l.earned for l in scored) / Σ(l.earned for l in scored)
+    else:
+        quality_score = volume_score  # fallback: không có quality data
+    leaf_score = volume_score × v + quality_score × q
 else:
-    # Fallback: dùng tỷ lệ đúng hạn hoặc rule riêng ghi trong leaf.description
-    # (VD: count_ontime / count_total × 100)
-    leaf_score = compute_fallback(logs)
+    leaf_score = volume_score
+
+return leaf_score
+```
+
+**Ví dụ: Phòng Giao hàng, NV Long, tháng 4**
+
+```
+scoringConfig = { formula: "target_based", base_unit_points: 1,
+                  target_points: 200, quality_weight: 30, no_data_policy: "zero" }
+
+WorkLogs:
+  80 giao nhỏ   → quantity=1, unitPoints=null→1,  score=null  → earned=80
+  20 lắp nội thất → quantity=1, unitPoints=3,     score=92    → earned=60
+   8 lắp điều hòa → quantity=1, unitPoints=5,     score=88    → earned=40
+
+total_earned  = 180 điểm công
+volume_score  = min(180/200×100, 100) = 90
+quality_score = (92×60 + 88×40) / (60+40) = 90.4   # chỉ logs có score
+
+leaf_score = 90×0.7 + 90.4×0.3 = 90.12
 ```
 
 ### eval_type = "event"
@@ -551,7 +603,115 @@ NV không được xem nội dung `leaf.description` chi tiết về cách AI ch
 
 ---
 
-## 17. Giới hạn hiện tại (v2)
+## 17. Calibration Period — Hiệu chuẩn tham số
+
+### Khái niệm
+
+`EvalPeriod.mode` kiểm soát hậu quả HR của kỳ đánh giá:
+
+| mode | Điểm được tính | Hiển thị cho NV | Gắn vào lương/xét thăng |
+|------|---------------|-----------------|------------------------|
+| `calibration` | Có | Có (để feedback) | **Không** |
+| `official` | Có | Có | **Có** |
+
+Calibration period cho phép QL và NV quan sát điểm thực tế trước khi hệ thống có hậu quả chính thức. Sau 1–2 kỳ calibration, điều chỉnh `scoringConfig` rồi chuyển sang official.
+
+### Quy tắc
+
+1. Kỳ `mode=calibration` vẫn tính đầy đủ: WorkLog, Event, Scorecard — chỉ khác ở nhãn
+2. Snapshot của calibration period được lưu với `is_calibration=true` để phân biệt
+3. Không giới hạn số kỳ calibration trước khi chuyển official
+4. QL có thể xem distribution report sau khi kỳ calibration đóng
+
+### Distribution Analysis — gợi ý hiệu chỉnh
+
+Sau khi một kỳ (`calibration` hoặc `official`) đóng, hệ thống tính phân phối điểm mỗi leaf:
+
+```python
+for leaf in tree.leaves:
+    scores = [scorecard.leaf_scores[leaf.id]
+              for scorecard in period.scorecards
+              if leaf.id in scorecard.leaf_scores]
+    if not scores: continue
+
+    analysis = {
+        "leaf_id":    leaf.id,
+        "count":      len(scores),
+        "mean":       mean(scores),
+        "p25":        percentile(scores, 25),
+        "p75":        percentile(scores, 75),
+        "pct_above90": len([s for s in scores if s >= 90]) / len(scores),
+        "pct_below50": len([s for s in scores if s < 50]) / len(scores),
+    }
+
+    # Sinh gợi ý hiệu chỉnh
+    if analysis.pct_above90 > 0.80:
+        hint = "TARGET_TOO_LOW"    # >80% đạt ≥90 → target_points cần tăng
+    elif analysis.pct_below50 > 0.50:
+        hint = "TARGET_TOO_HIGH"   # >50% dưới 50 → target_points cần giảm
+    elif analysis.mean > 90 and analysis.p25 > 85:
+        hint = "CONSIDER_HARDER"   # Phân phối dồn về đỉnh — cân nhắc tăng độ khó
+    elif analysis.mean < 40:
+        hint = "CONSIDER_EASIER"   # Quá khắt khe — hầu hết NV thất bại
+    else:
+        hint = "OK"
+```
+
+Gợi ý được lưu vào bảng `calibration_hints` và hiển thị cho admin khi review kỳ.
+
+### Workflow hiệu chuẩn chuẩn
+
+```
+[Tạo CriterionTree v1 — dựa trên preset hoặc kinh nghiệm]
+         │
+         ▼
+[Calibration period × 1–2 kỳ]
+   NV làm việc bình thường, CRM gửi dữ liệu
+   Điểm hiển thị nhưng không có hậu quả HR
+         │
+         ▼ Kỳ đóng → xem Distribution Analysis
+         │
+    ┌────┴────────────────────────────┐
+    │ hint=OK cho đa số leaf          │ hint có vấn đề
+    ▼                                 ▼
+[Mở official period]       [Clone tree → v2]
+                           Điều chỉnh: target_points,
+                           base_unit_points, quality_weight, weight
+                           Ghi calibrationNotes: "Lý do thay đổi"
+                           Publish v2
+                                │
+                                ▼
+                   [Calibration period thêm 1 kỳ với v2]
+                                │
+                                ▼
+                         [Mở official period]
+```
+
+### Điều chỉnh không cần tạo tree version mới
+
+Một số tham số của `scoringConfig` không ảnh hưởng đến cấu trúc cây — có thể điều chỉnh trong kỳ `draft` mới mà không cần redesign toàn bộ:
+
+| Điều chỉnh | Cần version mới? | Lý do |
+|-----------|-----------------|-------|
+| `target_points` | Có (clone tree) | Thay đổi scoring rule → immutability |
+| `base_unit_points` | Có (clone tree) | Ảnh hưởng tất cả WorkLog cũ |
+| `quality_weight` | Có (clone tree) | Thay đổi cách combine score |
+| `weight` của node | Có (clone tree) | Thay đổi tầm quan trọng tương đối |
+| `calibrationNotes` | Không | Chỉ là ghi chú, không ảnh hưởng score |
+
+### Retroactive comparison (không thay thế điểm cũ)
+
+Sau khi publish tree v2, admin có thể chạy **shadow recalculation** trên kỳ calibration đã đóng:
+
+- Tính lại điểm của kỳ cũ bằng v2 (không thay thế điểm gốc của v1)
+- So sánh side-by-side: v1 vs. v2 trên cùng tập dữ liệu
+- Đây là tool phân tích, không phải thay thế lịch sử
+
+Điểm official đã finalized **không bao giờ thay đổi** — lịch sử bất biến.
+
+---
+
+## 18. Giới hạn hiện tại (v2)
 
 **Chưa support:**
 

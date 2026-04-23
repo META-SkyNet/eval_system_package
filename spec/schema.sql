@@ -47,7 +47,8 @@ CREATE TABLE criterion_trees (
   version         INT NOT NULL DEFAULT 1,
   status          TEXT NOT NULL DEFAULT 'draft'
                   CHECK (status IN ('draft', 'active', 'archived')),
-  activated_at    TIMESTAMPTZ,             -- Thời điểm chuyển sang active
+  activated_at       TIMESTAMPTZ,             -- Thời điểm chuyển sang active
+  calibration_notes  TEXT,                    -- Ghi chú thay đổi so với version trước
   created_by      TEXT REFERENCES employees(id),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -82,6 +83,7 @@ CREATE TABLE criterion_nodes (
                   ))
                 ),
   description   TEXT,
+  scoring_config JSONB,                  -- ScoringConfig — bắt buộc khi eval_type='quantitative'
   sort_order    INT NOT NULL DEFAULT 0,
   external_ref  TEXT,                    -- Tag tuỳ chọn để map với CRM/ERP field
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -201,6 +203,8 @@ CREATE TABLE eval_periods (
   period_start        DATE NOT NULL,
   period_end          DATE NOT NULL,
   criterion_tree_id   UUID REFERENCES criterion_trees(id),  -- Tree đang dùng cho kỳ này
+  mode                TEXT NOT NULL DEFAULT 'official'
+                      CHECK (mode IN ('calibration', 'official')),
   status              TEXT NOT NULL DEFAULT 'open'
                       CHECK (status IN ('open', 'closed', 'finalized')),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -224,6 +228,7 @@ CREATE TABLE work_logs (
   external_id         TEXT,               -- Từ CRM/ERP, dùng cho idempotency
   source              TEXT,               -- "manual" | "crm" | "erp"
   quantity            NUMERIC(10,2) NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  unit_points         NUMERIC(5,2) CHECK (unit_points > 0),  -- Điểm công/đơn, override leaf.scoring_config.base_unit_points
   unit                TEXT,               -- "đơn", "km", "ca", ...
   score               NUMERIC(5,2) CHECK (score BETWEEN 0 AND 100),  -- Normalized 0-100
   raw_data            JSONB,              -- JSON gốc từ CRM/ERP

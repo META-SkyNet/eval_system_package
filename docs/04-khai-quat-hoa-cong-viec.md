@@ -1,195 +1,334 @@
-# 04 · Khái quát hoá Công việc qua Work Unit Catalog
+# 04 · Ghi nhận Công việc — WorkLog & Leaf Nodes
 
-## Vấn đề cốt lõi
+## Vấn đề cần giải quyết
 
-"Số đơn giao" là chỉ số tốt cho NV giao hàng đồ nhỏ. Nhưng:
+Mỗi phòng có loại công việc hoàn toàn khác nhau:
 
-- NV A giao 30 đơn nhỏ/ngày (mỗi đơn 10 phút)
-- NV B lắp 3 máy điều hòa/ngày (mỗi máy 2 tiếng)
-- NV C đi bảo hành 2 ca kéo dài 3 ngày
+- Phòng Giao hàng: số chuyến giao, số đơn lắp đặt
+- Phòng Kho: số pallet nhập, số đơn pick
+- Phòng IT: số ticket đóng trong SLA
+- Phòng Kế toán: số báo cáo nộp đúng deadline
 
-**Đếm thô thì A thắng 30:3:2** — nhưng thực tế B có thể làm nhiều hơn A về công sức.
+Vấn đề: làm sao đo được tất cả trên cùng thang điểm 0–100, trong khi mỗi phòng có đơn vị và target khác nhau?
 
-Cần tầng trung gian: **đơn vị công việc (Work Unit)** với **"điểm công" (effort points)** riêng cho từng loại.
+Giải pháp của hệ thống: không tạo catalog loại công việc riêng mà **map mỗi loại công việc thành một leaf node trong CriterionTree của phòng đó**, với `eval_type = "quantitative"`. Dữ liệu thô (số lượng) từ CRM/ERP đến dưới dạng WorkLog, hệ thống normalize thành điểm 0–100 theo rule trong leaf.
 
-## Mô hình: Work Unit Catalog
+---
 
-### Ý tưởng cốt lõi
+## Leaf node với eval_type=quantitative
 
-Mỗi phòng ban tự định nghĩa **danh mục loại công việc** của mình, mỗi loại có **điểm công** thể hiện độ nặng/phức tạp/thời gian chuẩn. Toàn bộ hệ thống đánh giá định lượng không đếm "số đơn" nữa mà đếm **tổng điểm công**.
+Mỗi "loại công việc" định lượng của một phòng được biểu diễn là một leaf node trong CriterionTree của phòng đó, với `eval_type = "quantitative"`.
 
-### Ví dụ: Phòng Giao hàng
+```typescript
+// Ví dụ: leaf "Số chuyến giao" trong CriterionTree Phòng Giao hàng
+{
+  "id": "node_delivery_trips",
+  "tree_id": "tree_delivery_v2",
+  "parent_id": "node_folder_result",
+  "name": "Số chuyến giao",
+  "weight": 60,                          // 60% trong folder "Kết quả"
+  "is_leaf": true,
+  "eval_type": "quantitative",
+  "external_ref": "delivery_trip_count", // Tag để CRM map đến node này
+  "description": "Số chuyến giao/tháng. Target=100 chuyến/tháng. normalize = min(Σquantity / 100 × 100, 100)"
+}
+```
 
-| Mã | Tên loại công việc | Điểm công | Ghi chú |
-|----|-------------------|-----------|---------|
-| `GIAO_NHO` | Giao đơn nhỏ (≤5kg) | 1 | đồ gia dụng nhỏ, giao nhanh |
-| `GIAO_LON` | Giao đơn cồng kềnh | 3 | cần 2 người, xe tải |
-| `LAP_CB` | Lắp đặt cơ bản | 5 | tủ lạnh, máy giặt đơn giản |
-| `LAP_DH` | Lắp đặt điều hòa | 10 | bao gồm đi ống, test |
-| `LAP_BNL` | Lắp bình nóng lạnh | 8 | cần đi điện/nước |
-| `GIAO_LAP` | Giao + lắp trọn gói | 12 | cho SP cao cấp |
+Hai field quan trọng:
 
-### Ví dụ: Phòng Kho
+- **`external_ref`**: tag tùy ý để CRM/ERP biết gửi dữ liệu vào node nào, không cần biết `node_id` nội bộ
+- **`description`**: mô tả cách normalize score từ quantity — server đọc rule này để tính điểm, hoặc CRM tự tính rồi gửi `score` luôn
 
-| Mã | Tên | Điểm |
-|----|-----|------|
-| `PICK_1` | Pick 1 SKU đơn lẻ | 0.5 |
-| `PICK_N` | Pick đơn phức tạp (>5 SKU) | 2 |
-| `NHAP_PL` | Nhập 1 pallet | 3 |
-| `KIEM_KE` | Kiểm kê 1 khu | 8 |
-| `SAP_XEP` | Sắp xếp, gộp vị trí | 1.5 |
+---
 
-### Ví dụ: Phòng Bảo hành
+## WorkLog — bản ghi từng lần làm việc
 
-| Mã | Tên | Điểm |
-|----|-----|------|
-| `TV_PHONE` | Tư vấn qua điện thoại | 1 |
-| `DI_KIEM` | Đến nhà khách kiểm tra | 4 |
-| `SUA_TC` | Sửa chữa tại chỗ | 6 |
-| `MANG_XUONG` | Mang về xưởng sửa | 10 |
-| `THAY_BH` | Thay thế bảo hành | 5 |
-
-## Work Log: Ghi nhận công việc đã làm
-
-Khi NV hoàn thành một đơn vị công việc, hệ thống ghi một **Work Log**:
+Mỗi khi nhân viên hoàn thành một đơn vị công việc, hệ thống tạo một **WorkLog**:
 
 ```typescript
 type WorkLog = {
   id: string;
-  employeeId: string;
-  workTypeId: string;            // Tham chiếu vào Work Unit catalog
-  quantity: number;              // Thường là 1, có thể > 1 nếu gộp
-  status: WorkStatus;            // completed_ontime | completed_late | completed_issue | failed
-  completedAt: ISO8601;
-  note?: string;
-  relatedEventId?: string;       // Nếu công việc này sinh ra sự vụ
-
-  externalId?: string;           // Nếu đến từ CRM qua API — idempotency key
-  source?: "manual" | "crm" | "erp" | string;
+  employee_id: string;
+  period_id: string;
+  criterion_node_id: string;   // FK → CriterionNode (phải là leaf, eval_type=quantitative)
+  external_id?: string;        // ID từ CRM/ERP — dùng cho idempotency
+  source?: string;             // "crm" | "erp" | "manual"
+  quantity: number;            // Số lượng đơn vị (thường là 1)
+  unit?: string;               // "chuyến", "pallet", "ticket", "báo cáo", ...
+  score?: number;              // 0-100 đã normalize — CRM tự tính rồi gửi, hoặc server tính
+  raw_data?: object;           // JSON gốc từ CRM/ERP để audit
+  logged_at: ISO8601;
+  created_at: ISO8601;
 };
 ```
 
-### Điểm công tính được
+**`(external_id, source)` là cặp idempotency key**: CRM gửi lại cùng external_id sẽ UPDATE record cũ, không tạo bản mới.
 
-```
-points = workType.points × quantity
-```
+---
 
-**Ví dụ:** NV Long làm 1 `MANG_XUONG` (10 điểm/đv) × 1 = **10 điểm**.
+## Cách CRM/ERP gửi dữ liệu
 
-## Liên kết với Template
+### Dùng external_ref (khuyến nghị)
 
-Template có 3 loại chỉ số định lượng tự tính từ Work Logs:
+CRM không cần biết `criterion_node_id` nội bộ. Dùng `external_ref` để hệ thống tự map:
 
-### 1. `work_points` — Tổng điểm công
+```http
+POST /work-events
+Authorization: Bearer evk_live_...
 
-Công thức:
-```
-score = Σ (points) cho các WorkLog của NV trong kỳ
-```
-
-Field `workTypeIds`:
-- `null` → tính trên tất cả loại công việc của phòng
-- `["wt_d3", "wt_d4"]` → chỉ tính các loại cụ thể
-
-### 2. `work_count` — Số việc loại cụ thể
-
-Công thức:
-```
-score = Σ (quantity) cho các WorkLog thuộc workTypeIds trong kỳ
+{
+  "employee_external_id": "CRM_EMP_042",
+  "external_ref": "delivery_trip_count",
+  "quantity": 1,
+  "unit": "chuyến",
+  "external_id": "crm_order_00812",
+  "source": "crm",
+  "logged_at": "2026-04-23T14:30:00Z"
+}
 ```
 
-**Bắt buộc** có `workTypeIds` (khác `null`).
+Server tìm leaf node có `external_ref = "delivery_trip_count"` trong CriterionTree active của phòng nhân viên đó, tạo WorkLog tương ứng.
 
-**Ví dụ:** "Số đơn lắp đặt" → `workTypeIds: ["LAP_CB", "LAP_DH", "LAP_BNL", "GIAO_LAP"]`
+### Dùng criterion_node_id trực tiếp
 
-### 3. `work_quality` — Tỷ lệ đạt chất lượng
+Nếu hệ tích hợp sâu hơn và biết node ID:
 
-Công thức:
+```http
+POST /work-events
+{
+  "employee_external_id": "CRM_EMP_042",
+  "criterion_node_id": "node_delivery_trips",
+  "quantity": 1,
+  "external_id": "crm_order_00812",
+  "source": "crm",
+  "logged_at": "2026-04-23T14:30:00Z"
+}
 ```
-score = (Σ quantity where status == "completed_ontime") / (Σ quantity total) × 100
+
+### Gửi score đã tính sẵn
+
+Nếu CRM đã biết cách normalize, có thể gửi `score` trực tiếp thay vì để server tính:
+
+```http
+POST /work-events
+{
+  "employee_external_id": "CRM_EMP_042",
+  "external_ref": "delivery_trip_count",
+  "quantity": 143,
+  "unit": "chuyến",
+  "score": 95,                   // CRM tự tính: 143/150 × 100 ≈ 95
+  "external_id": "crm_monthly_batch_042_apr",
+  "source": "crm",
+  "logged_at": "2026-04-30T23:59:00Z"
+}
 ```
 
-Trả về %, không phải số đếm.
+Khi `score` có sẵn, server dùng luôn giá trị đó — không tính lại từ quantity.
 
-## Lợi ích của mô hình
+---
 
-### 1. So sánh công bằng trong cùng phòng
+## Normalize score từ quantity
 
-NV A làm 30 điểm/ngày, NV B làm 28 điểm/ngày — rõ ràng ngay cả khi loại việc khác nhau.
+Khi WorkLog không có sẵn `score`, server tính dựa trên rule ghi trong `leaf.description`.
 
-### 2. Khung template không đổi
+Công thức phổ biến:
 
-Chỉ số "Kết quả định lượng" luôn là *"Tổng điểm công"* — áp được cho mọi phòng. Khung 3 trụ cột 50/30/20 vẫn nguyên.
+```
+# Target-based normalize
+score = min(quantity / target × 100, 100)
 
-### 3. Điều chỉnh được theo thực tế
+# Tỷ lệ đúng hạn (khi có nhiều log trong kỳ)
+score = (Σ quantity_ontime / Σ quantity_total) × 100
+```
 
-Ban đầu ước lượng *"lắp điều hòa = 10 điểm"* là phỏng đoán. Sau 2 tháng thấy thực tế mất nhiều thời gian hơn → chỉnh thành 12. Template không đổi, logs cũ vẫn còn — chỉ hệ số thay đổi.
+Khi aggregating nhiều WorkLog trong cùng kỳ:
 
-### 4. Ghi nhận trạng thái đa chiều
+```python
+logs = WorkLog where employee_id = X and period_id = P and criterion_node_id = leaf.id
 
-Một work log không chỉ có "xong/chưa xong" mà còn *đúng giờ / trễ*, *đạt chất lượng / có lỗi*, *có phát sinh sự vụ đi kèm không* (qua `relatedEventId`).
+if all logs have score field:
+    leaf_score = Σ(log.score × log.quantity) / Σ(log.quantity)  # Weighted mean
+else:
+    leaf_score = compute_from_description(logs, leaf.description)
+```
 
-## Vấn đề cần lưu ý khi triển khai
+**Nếu leaf.description không có rule rõ ràng và WorkLog không gửi score** → hệ thống không thể tính. Cần phối hợp với team CRM để đảm bảo một trong hai: mô tả rule trong description, hoặc CRM gửi `score` luôn.
 
-### Hiệu chỉnh điểm công định kỳ
+---
 
-Điểm công ước lượng ban đầu sẽ sai lệch so với thực tế. Cần quy trình **3-6 tháng review** lại tất cả điểm công dựa trên dữ liệu thực tế (số giờ trung bình mỗi loại, số NV cần thiết, v.v.).
+## Ví dụ thực tế: 3 phòng khác nhau
 
-**Version hoá catalog** có thể cần thiết nếu điều chỉnh thường xuyên — hiện tại trong artifact chưa làm, nhưng có thể thêm sau nếu muốn.
+### Phòng Giao hàng
 
-### Điểm công theo độ khó ngoài cảnh
+Leaf: `"Số chuyến giao"`, `external_ref = "delivery_trip_count"`
 
-Giao 1 đơn nội thành khác giao 30km ngoại thành. Hai cách mở rộng:
+CRM gửi mỗi chuyến hoàn thành:
 
-**Cách 1:** Tách thành nhiều loại công việc cụ thể hơn: `GIAO_NOI_THANH`, `GIAO_NGOAI_THANH`.
+```json
+{
+  "employee_external_id": "CRM_EMP_010",
+  "external_ref": "delivery_trip_count",
+  "quantity": 1,
+  "unit": "chuyến",
+  "external_id": "trip_20260423_010_001",
+  "source": "crm",
+  "logged_at": "2026-04-23T11:15:00Z"
+}
+```
 
-**Cách 2:** Thêm *"hệ số môi trường"* vào work log (vùng, thời tiết, loại khách), nhân với điểm công.
+Cuối tháng, NV Long giao 143 chuyến. Target = 150. Tổng quantity trong kỳ = 143.
 
-Cách 1 đơn giản hơn, khuyên dùng trước.
+```
+score = min(143 / 150 × 100, 100) = 95.3
+```
 
-### Chuẩn hóa giữa phòng
+### Phòng Kế toán
 
-Đội Bảo hành chủ yếu tư vấn phone (1đ/ca), Giao hàng chủ yếu lắp đặt (10đ/ca) → *"điểm công tuyệt đối"* không so sánh được giữa phòng.
+Leaf: `"Báo cáo đúng hạn"`, `external_ref = "accounting_report_ontime"`
 
-**Giải pháp:** Khi tổng hợp xuyên phòng, không dùng điểm tuyệt đối mà dùng **% so với baseline của phòng**: *"NV X đạt 120% điểm công trung bình của phòng"*.
+ERP gửi batch cuối tháng:
 
-Mô hình tính tỷ lệ này chưa được hiện thực hoá trong artifact — là điểm mở rộng tự nhiên khi scale lên nhiều phòng.
+```json
+{
+  "employee_external_id": "ERP_ACC_005",
+  "external_ref": "accounting_report_ontime",
+  "quantity": 8,
+  "unit": "báo cáo",
+  "score": 88,                   // 8/9 báo cáo trong tháng nộp đúng hạn → 8/9 × 100 ≈ 88.9
+  "external_id": "erp_acc_apr2026_005",
+  "source": "erp",
+  "logged_at": "2026-04-30T17:00:00Z"
+}
+```
 
-## Đặc tả data model
+ERP đã tự tính score (vì nó biết tổng số báo cáo cần nộp là 9). Server dùng `score = 88` trực tiếp.
+
+### Phòng IT — Ticket support
+
+Leaf: `"Ticket xử lý trong SLA"`, `external_ref = "it_ticket_within_sla"`
+
+Ticket system gửi mỗi ticket đóng:
+
+```json
+{
+  "employee_external_id": "CRM_EMP_031",
+  "external_ref": "it_ticket_within_sla",
+  "quantity": 1,
+  "unit": "ticket",
+  "external_id": "ticket_INC-2891",
+  "source": "crm",
+  "logged_at": "2026-04-23T16:45:00Z"
+}
+```
+
+Trong kỳ, NV Hùng đóng 47 ticket. Target = 40/tháng.
+
+```
+score = min(47 / 40 × 100, 100) = 100  (capped tại 100)
+```
+
+---
+
+## Dead Letter Queue — khi không map được
+
+Nếu CRM gửi `external_ref` không khớp với bất kỳ leaf node nào trong cây active của phòng → hệ thống **không reject**, mà ghi vào **Dead Letter Queue (DLQ)**:
+
+```json
+// DLQ entry
+{
+  "error_code": "UNKNOWN_NODE_REF",
+  "payload": { "external_ref": "delivery_return_trip", ... },
+  "received_at": "2026-04-23T14:30:05Z",
+  "status": "pending"
+}
+```
+
+Admin nhận alert, kiểm tra:
+
+- Nếu `external_ref` mới cần thêm vào tree → clone tree, thêm leaf mới với `external_ref` đó, publish version mới
+- Nếu CRM gửi nhầm `external_ref` → yêu cầu CRM sửa
+- Sau khi fix → replay DLQ entry, nó sẽ được xử lý thành WorkLog bình thường
+
+DLQ đảm bảo **CRM không bao giờ bị block** — dữ liệu vẫn đến, chỉ đợi được xử lý. Không mất dữ liệu trong quá trình cấu hình hệ thống.
+
+Tương tự với `employee_external_id` không tồn tại (`EMPLOYEE_NOT_FOUND`) hoặc kỳ đã finalized (`PERIOD_FINALIZED`) — đều vào DLQ thay vì từ chối.
+
+---
+
+## Weight thay cho "điểm công" cố định
+
+Trong mô hình cũ, mỗi loại công việc có "điểm công" cố định (VD: lắp điều hòa = 10 điểm, giao đơn nhỏ = 1 điểm). Mô hình mới không dùng cơ chế này.
+
+Thay vào đó, **weight của leaf trong CriterionTree** xác định mức độ quan trọng của loại công việc đó trong tổng điểm của phòng.
+
+Ví dụ cây Giao hàng:
+
+```
+Kết quả (weight 50% trong tree)
+  ├── Số chuyến giao     (weight 60% trong folder → đóng góp 30% vào tổng)
+  └── Tỷ lệ đúng hạn    (weight 40% trong folder → đóng góp 20% vào tổng)
+```
+
+Phòng muốn tăng tầm quan trọng của "đúng hạn" so với "số lượng"? Điều chỉnh weight trong tree — không cần thay đổi cách CRM gửi dữ liệu, không cần đổi `external_ref`.
+
+Điều chỉnh weight đòi hỏi tạo tree version mới (vì tree active là immutable). Nhưng `external_ref` của leaf vẫn giữ nguyên — CRM tiếp tục gửi như cũ, không cần cập nhật integration.
+
+---
+
+## Validation khi nhận WorkLog
+
+### Hard reject (HTTP 400)
+
+Server trả lỗi ngay, CRM phải sửa payload:
+
+- Thiếu field bắt buộc (`employee_external_id` hoặc `employee_id`, `quantity`, `logged_at`)
+- `quantity <= 0`
+- `logged_at` format sai
+
+### Dead letter (HTTP 422 — ghi vào DLQ)
+
+Server nhận nhưng không xử lý được ngay, đợi admin fix data:
+
+- `external_ref` không map được node nào
+- `criterion_node_id` không tồn tại hoặc không phải leaf quantitative
+- `employee_external_id` không tìm thấy trong hệ thống
+
+### Business warning (vẫn accept, HTTP 200/201)
+
+- Kỳ đã `finalized` → ghi DLQ, báo admin (không reject vì có thể mở kỳ bổ sung)
+
+---
+
+## Data model
 
 ```typescript
-type WorkCatalog = {
-  id: string;
-  departmentId: string;
-  name: string;
-  unitTypes: WorkUnitType[];
-};
-
-type WorkUnitType = {
-  id: string;
-  code: string;                 // "LAP_DH" — stable identifier, dùng trong API
-  name: string;                 // "Lắp đặt điều hòa"
-  points: number;               // Điểm công cơ bản
-  note?: string;
-};
-
 type WorkLog = {
   id: string;
-  employeeId: string;
-  workTypeId: string;
-  quantity: number;
-  status: "completed_ontime" | "completed_late" | "completed_issue" | "failed";
-  completedAt: ISO8601;
-  note?: string;
-
-  relatedEventId?: string;
-  externalId?: string;          // Từ CRM/ERP
-  source?: string;
+  employee_id: string;           // FK → Employee
+  period_id: string;             // FK → EvalPeriod
+  criterion_node_id: string;     // FK → CriterionNode (leaf, eval_type=quantitative)
+  external_id?: string;          // Từ CRM/ERP — idempotency key
+  source?: string;               // "crm" | "erp" | "manual"
+  quantity: number;              // Số lượng đơn vị (> 0)
+  unit?: string;                 // "chuyến", "pallet", "ticket", "báo cáo", ...
+  score?: number;                // 0-100 normalized — tính sẵn hoặc server tính
+  raw_data?: object;             // JSON gốc từ CRM/ERP
+  logged_at: ISO8601;
+  created_at: ISO8601;
 };
 ```
+
+**Constraints:**
+
+- `(external_id, source)` UNIQUE WHERE NOT NULL — idempotency
+- `criterion_node_id` phải trỏ đến leaf có `eval_type = "quantitative"`
+- CRM cùng source gửi lại cùng `external_id` → UPDATE record cũ (không tạo mới)
+
+---
 
 ## Đọc tiếp
 
-- `05-tich-hop-crm-erp.md` — Work Logs chủ yếu đến từ CRM qua API
-- `spec/api-specification.md` — endpoint `POST /work-events` tạo Work Log
+- `02-template-va-versioning.md` — CriterionTree lifecycle, cách thêm leaf node
+- `05-tich-hop-crm-erp.md` — chi tiết integration pattern, authentication, webhook
+- `spec/api-specification.md` — endpoint `POST /work-events` đặc tả đầy đủ
+- `spec/business-rules.md` mục 1, 6, 8 — scoring formula, WorkLog validation, DLQ rules

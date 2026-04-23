@@ -5,11 +5,11 @@
 Một **sự vụ** là một lần xảy ra cụ thể, có thời điểm, có nhân vật, có mức độ — khác hẳn với chỉ số định lượng tự động đếm.
 
 **Ví dụ:**
-- "15/4, khách ở Cầu Giấy khen anh Nam giao nhanh, lắp đặt cẩn thận" → sự vụ `customer_praise`
-- "18/4, anh Bình làm vỡ kính tủ khi vận chuyển, thiệt hại ~2tr" → sự vụ `incident_damage`
-- "20/4, anh Cường chủ động ở lại sau giờ hỗ trợ đơn gấp" → sự vụ `extra_effort`
+- "15/4, khách ở Cầu Giấy khen anh Nam giao nhanh, lắp đặt cẩn thận" → sự vụ `commendation`
+- "18/4, anh Bình làm vỡ kính tủ khi vận chuyển, thiệt hại ~2tr" → sự vụ `incident`
+- "20/4, anh Cường chủ động ở lại sau giờ hỗ trợ đơn gấp" → sự vụ `initiative`
 
-Sự vụ là **dữ liệu thô** nuôi cho Trụ cột 3 (Phản hồi & Sự cố) và bổ sung cho Trụ cột 2 (một số category sự vụ gắn với chỉ số scale như "Chăm chỉ", "Tay nghề").
+Sự vụ là **dữ liệu thô** gắn vào leaf node có `eval_type='event'` trong CriterionTree của phòng. Sự vụ không gắn vào pillar cứng — mỗi phòng tự quyết leaf nào nhận loại sự vụ nào qua `criterion_node_id`. Sự vụ không chỉ định `criterion_node_id` (null) được coi là sự vụ chung, ghi vào hồ sơ NV nhưng không tính vào điểm cây.
 
 ## Tại sao phải có module này
 
@@ -43,7 +43,7 @@ Không gắn vào template (vì template thay đổi). Gắn vào **nhân viên 
 | Mức độ | Hệ số | Ý nghĩa |
 |--------|-------|---------|
 | `light` | ×1 | Việc nhỏ, thường ngày |
-| `medium` | ×2 | Đáng ghi nhận, có tác động |
+| `normal` | ×2 | Đáng ghi nhận, có tác động |
 | `heavy` | ×4 | Nghiêm trọng, cần quan tâm đặc biệt |
 
 Hệ số cần **hiệu chuẩn theo thực tế** công ty. Ví dụ một sự cố heavy có thể phải ×10 trong môi trường nhạy cảm hơn.
@@ -62,18 +62,15 @@ Nguồn khác nhau có thể có trọng số khác nhau khi tính điểm (VD: 
 
 ## Danh mục loại sự vụ chuẩn
 
-| Category | Polarity | Ý nghĩa | Gắn với pillar mặc định |
-|----------|----------|---------|------------------------|
-| `customer_praise` | + | Khách khen | feedback |
-| `customer_complaint` | − | Khách phàn nàn | feedback |
-| `incident_damage` | − | Sự cố, thiệt hại | feedback |
-| `initiative` | + | Sáng kiến, chủ động | qualitative |
-| `extra_effort` | + | Làm thêm, xông xáo | qualitative |
-| `absence` | − | Nghỉ, không chăm | qualitative |
-| `teamwork` | + | Hỗ trợ đồng đội | qualitative |
-| `skill_issue` | − | Thiếu kỹ năng, sai sót | qualitative |
+| Category | Direction | Ý nghĩa | Ghi chú |
+|----------|-----------|---------|---------|
+| `commendation` | positive | Khen — từ khách hoặc nội bộ | Gộp customer_praise, teamwork, extra_effort cũ |
+| `complaint` | negative | Phàn nàn — từ khách hoặc nội bộ | Thay customer_complaint cũ |
+| `incident` | negative | Sự cố, thiệt hại, vi phạm | Thay incident_damage, absence, skill_issue cũ |
+| `initiative` | positive | Sáng kiến, chủ động cải tiến | Giữ nguyên |
+| `campaign_reward` | positive | Phần thưởng từ Campaign | Tự động tạo khi Campaign công bố người thắng |
 
-Có thể mở rộng thêm theo nhu cầu, nhưng càng ít càng tốt (nhân viên lười điền nếu quá nhiều loại).
+5 category đủ bao phủ mọi tình huống. Càng ít càng tốt — nhân viên lười điền nếu quá nhiều loại.
 
 ## Vòng đời sự vụ
 
@@ -107,8 +104,8 @@ Khi điều tra sau này, truy được ngay "sự cố này xảy ra trong côn
 type Event = {
   id: string;
   employeeId: string;           // Ai được ghi nhận
-  category: EventCategory;      // Một trong 8 loại
-  severity: "light" | "medium" | "heavy";
+  category: "commendation" | "complaint" | "incident" | "initiative" | "campaign_reward";
+  severity: "light" | "normal" | "heavy";
   source: "customer" | "internal" | "automatic";
   occurredAt: ISO8601;          // Khi nào xảy ra
   reportedBy: string;           // Ai ghi nhận (tên, không ẩn danh)
@@ -133,13 +130,17 @@ type Event = {
 ```
 
 **Ví dụ:**
-- 3 sự vụ `customer_praise` (medium, medium, light) = 2 + 2 + 1 = +5
-- 1 sự vụ `incident_damage` (heavy) = −4
+- 3 sự vụ `commendation` (normal, normal, light) = 2 + 2 + 1 = +5
+- 1 sự vụ `incident` (heavy) = −4
 - Điểm ròng = +5 − 4 = +1
 
-Điểm ròng này được normalize (chuẩn hoá) theo thang của Pillar 3 trong template để cộng vào tổng điểm.
+Điểm ròng được normalize về thang 0–100 theo công thức:
+```
+score = clamp(50 + net_score × scale_factor, 0, 100)
+```
+Baseline 50 = không có sự vụ nào. `scale_factor` do phòng cấu hình trong leaf node. Điểm này được tính vào leaf `eval_type='event'` tương ứng trong CriterionTree.
 
 ## Đọc tiếp
 
-- `04-khai-quat-hoa-cong-viec.md` — mô hình hóa công việc qua Work Unit catalog
+- `04-khai-quat-hoa-cong-viec.md` — ghi nhận công việc qua WorkLog & leaf node
 - `05-tich-hop-crm-erp.md` — sự vụ cũng có thể đến từ CRM qua API

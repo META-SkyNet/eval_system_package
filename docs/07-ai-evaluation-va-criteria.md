@@ -59,9 +59,9 @@ AI giải quyết phần đọc và phân loại — con người giải quyết
 
 ---
 
-## Cấu trúc EvaluationCriteria
+## Cấu trúc Criteria trên CriterionNode
 
-Mỗi `WorkUnitType` có thể gắn một bộ criteria. Criteria có versioning — thay đổi tiêu chí thì tạo version mới, không overwrite version đang active.
+Mỗi leaf node với `eval_type='ai'` chứa criteria trong trường `description` (ngôn ngữ nghiệp vụ) và JSON payload dưới đây. Immutability đến từ CriterionTree versioning — khi tree active, description của leaf là bất biến. Muốn thay đổi criteria → tạo tree version mới, publish, tree cũ tự archive.
 
 ```json
 {
@@ -87,7 +87,7 @@ Mỗi `WorkUnitType` có thể gắn một bộ criteria. Criteria có versionin
       "auto_flag_event": {
         "condition": "Điều kiện khi nào sinh sự vụ tự động",
         "creates_event": {
-          "category": "incident_damage",
+          "category": "incident",
           "severity": "heavy"
         }
       }
@@ -138,8 +138,8 @@ Mỗi `WorkUnitType` có thể gắn một bộ criteria. Criteria có versionin
       "auto_flag_event": {
         "condition": "Trễ > 7 ngày",
         "creates_event": {
-          "category": "skill_issue",
-          "severity": "medium"
+          "category": "incident",
+          "severity": "normal"
         }
       }
     },
@@ -165,7 +165,7 @@ Mỗi `WorkUnitType` có thể gắn một bộ criteria. Criteria có versionin
       "auto_flag_event": {
         "condition": ">10% defective",
         "creates_event": {
-          "category": "incident_damage",
+          "category": "incident",
           "severity": "heavy"
         }
       }
@@ -234,7 +234,7 @@ Mỗi `WorkUnitType` có thể gắn một bộ criteria. Criteria có versionin
       "auto_flag_event": {
         "condition": "Khách đề cập đến review xấu, khiếu nại chính thức, hoặc huỷ đơn",
         "creates_event": {
-          "category": "customer_complaint",
+          "category": "complaint",
           "severity": "heavy"
         }
       }
@@ -303,7 +303,7 @@ Mỗi `WorkUnitType` có thể gắn một bộ criteria. Criteria có versionin
       "auto_flag_event": {
         "condition": "Hàng bị hư hại rõ ràng (khách từ chối, có ảnh hư hại)",
         "creates_event": {
-          "category": "incident_damage",
+          "category": "incident",
           "severity": "heavy"
         }
       }
@@ -372,8 +372,8 @@ draft → active → archived
 ```
 
 - `draft`: đang soạn thảo, chưa dùng để chấm
-- `active`: đang dùng. Chỉ 1 version active mỗi WorkType
-- `archived`: đã thay thế bởi version mới. Các WorkLog cũ đã chấm theo version này vẫn giữ nguyên
+- `active`: đang dùng. Chỉ 1 CriterionTree active mỗi phòng — tất cả leaf `eval_type='ai'` dùng criteria trong tree đó
+- `archived`: đã thay thế bởi version mới. Các AIEvaluation cũ vẫn giữ nguyên tham chiếu tree cũ
 
 **Nguyên tắc immutability:** Criteria `active` không được sửa. Muốn thay đổi → tạo version mới, publish → version cũ tự archive.
 
@@ -421,6 +421,6 @@ accuracy = (số lần QL confirm AI) / (tổng số AI proposal)
 
 ## Đọc tiếp
 
-- [spec/data-model.md](../spec/data-model.md) — EvaluationCriteria type definition
+- [spec/data-model.md](../spec/data-model.md) — CriterionNode (eval_type=ai), AIEvaluation entities
 - [spec/api-specification.md](../spec/api-specification.md) — POST /ai-evaluations endpoint
 - [spec/business-rules.md](../spec/business-rules.md) — AI evaluation lifecycle rules

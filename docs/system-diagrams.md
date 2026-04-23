@@ -11,7 +11,7 @@ graph TB
     subgraph External["Hệ thống bên ngoài"]
         CRM["🏢 CRM / ERP\n(System of Record)\nQuản lý đơn hàng,\ncông việc, nhân sự"]
         CHAT["💬 Chat Agent AI\n(Zalo / Facebook)\nChăm sóc khách hàng"]
-        FORM["📋 Google Form / Form nội bộ\nĐánh giá 360°"]
+        FORM["📋 Form đánh giá 360°\nQL / đồng nghiệp chấm"]
     end
 
     subgraph EvalSystem["Evaluation System (System of Aggregation)"]
@@ -26,20 +26,20 @@ graph TB
         end
 
         subgraph Store["Data Store (PostgreSQL)"]
-            DB[("employees\nwork_logs\nevents\nversions\ncampaigns\nai_evaluations\n...")]
+            DB[("employees\ncriterion_trees\ncriterion_nodes\nwork_logs\nevents\nqualitative_scores\nmanual_scores\nai_evaluations\nscorecard_snapshots\ncampaigns\n...")]
         end
     end
 
     subgraph UI["Dashboard (Frontend)"]
-        ADMIN["👤 Admin Dashboard\nTemplate / Catalog\nCampaign / Events"]
+        ADMIN["👤 Admin Dashboard\nCriterionTree / Preset\nCampaign / Events"]
         QL["👔 QL Dashboard\nReview AI / Events\nScorecard"]
         NV["👷 NV Dashboard\nBảng điểm cá nhân\nRecognitions"]
     end
 
-    CRM -->|"POST /work-events\nPOST /incidents\nPOST /employee-mapping"| API
+    CRM -->|"POST /work-events\nPOST /events"| API
     CHAT -->|"POST /ai-evaluations"| API
     CRM -->|"GET /scorecard"| API
-    FORM -->|"POST /qualitative-scores"| API
+    FORM -->|"POST /qualitative-scores\nPOST /manual-scores"| API
 
     API --> WE
     API --> INC
@@ -59,8 +59,7 @@ graph TB
 
     style External fill:#FEF3C7,stroke:#D97706
     style EvalSystem fill:#EFF6FF,stroke:#3B82F6
-    style UI fill:#F0FDF4,stroke:#16A34A
-    style Store fill:#F8FAFC,stroke:#64748B
+    style UI fill:#F0FDF4,stroke:#22C55E
 ```
 
 ---
@@ -69,240 +68,245 @@ graph TB
 
 ```mermaid
 erDiagram
-    DEPARTMENT ||--o{ EMPLOYEE : "has"
-    DEPARTMENT ||--o{ TEMPLATE : "has"
-    DEPARTMENT ||--|| WORK_CATALOG : "has exactly 1"
-
-    PILLAR_LIBRARY ||--o{ VERSION : "referenced by pillars"
-
-    TEMPLATE ||--o{ VERSION : "has versions"
-    TEMPLATE |o--o| VERSION : "active_version_id"
-
-    VERSION ||--o{ QUALITATIVE_SCORE : "evaluated against"
-    VERSION ||--o| SCORECARD_SNAPSHOT : "snapshot based on"
-
-    WORK_CATALOG ||--o{ WORK_UNIT_TYPE : "contains"
-    WORK_UNIT_TYPE |o--o| EVALUATION_CRITERIA : "optional criteria"
-    WORK_UNIT_TYPE ||--o{ WORK_LOG : "logged as"
-
-    EMPLOYEE ||--o{ WORK_LOG : "performs"
-    EMPLOYEE ||--o{ EVENT : "subject of"
-    EMPLOYEE ||--o{ QUALITATIVE_SCORE : "is evaluated"
-    EMPLOYEE ||--o{ QUALITATIVE_SCORE : "evaluates others"
-    EMPLOYEE ||--o{ SCORECARD_SNAPSHOT : "has"
-    EMPLOYEE ||--o{ PEER_RECOGNITION : "sends"
-    EMPLOYEE ||--o{ PEER_RECOGNITION : "receives"
-    EMPLOYEE ||--o{ AI_EVALUATION : "assessed by"
-
-    WORK_LOG |o--o| EVENT : "related_event"
-    WORK_LOG ||--o| AI_EVALUATION : "assessed by"
-
-    AI_EVALUATION ||--o{ EVENT : "auto-generates"
-    AI_EVALUATION ||--o{ AI_ALERT : "triggers red flags"
-
-    EVENT |o--o| WORK_LOG : "related_work_log"
-
-    CAMPAIGN ||--o{ PEER_RECOGNITION : "scopes"
-    PEER_RECOGNITION ||--|| EVENT : "auto-generates teamwork event"
-
     DEPARTMENT {
-        text id PK
-        text code UK
-        text name
-        boolean active
+        uuid id PK
+        string external_id
+        string name
     }
 
     EMPLOYEE {
-        text id PK
-        text external_id UK
-        text full_name
-        text department_id FK
-        text role
-        boolean active
+        uuid id PK
+        string external_id
+        uuid department_id FK
+        string name
+        string role
     }
 
-    PILLAR_LIBRARY {
-        text id PK
-        text name
-        text data_source
-        int default_weight
-        boolean is_standard
-        boolean active
+    CRITERION_TREE {
+        uuid id PK
+        uuid department_id FK
+        int version
+        string status
+        timestamp activated_at
+        uuid created_by FK
     }
 
-    TEMPLATE {
-        text id PK
-        text department_id FK
-        text name
-        text active_version_id FK
+    CRITERION_NODE {
+        uuid id PK
+        uuid tree_id FK
+        uuid parent_id FK
+        string name
+        numeric weight
+        boolean is_leaf
+        string eval_type
+        string external_ref
+        text description
+        int sort_order
     }
 
-    VERSION {
-        text id PK
-        text template_id FK
-        text version_number
-        text status
-        jsonb pillars
+    PRESET_LIBRARY {
+        uuid id PK
+        string name
+        string target_department_type
     }
 
-    WORK_CATALOG {
-        text id PK
-        text department_id FK
-        jsonb unit_types
+    PRESET_NODE {
+        uuid id PK
+        uuid preset_id FK
+        uuid parent_id FK
+        string name
+        numeric weight
+        boolean is_leaf
+        string eval_type
     }
 
-    WORK_UNIT_TYPE {
-        text id
-        text code
-        text name
-        numeric points
-        boolean active
-        jsonb evaluation_criteria
+    EVAL_PERIOD {
+        uuid id PK
+        uuid department_id FK
+        uuid criterion_tree_id FK
+        string name
+        date period_start
+        date period_end
+        string status
     }
 
     WORK_LOG {
-        text id PK
-        text employee_id FK
-        text work_type_code
+        uuid id PK
+        uuid employee_id FK
+        uuid period_id FK
+        uuid criterion_node_id FK
+        string external_id
+        string source
         numeric quantity
-        text status
-        timestamptz completed_at
-        text external_id
-        text source
-        numeric points_snapshot
+        string unit
+        numeric score
+        jsonb raw_data
+        timestamp logged_at
     }
 
     EVENT {
-        text id PK
-        text employee_id FK
-        text category
-        text severity
-        text source
-        timestamptz occurred_at
-        text reported_by
-        text status
-    }
-
-    EVALUATION_CRITERIA {
-        text version
-        text status
-        text description_for_ai
-        jsonb input_schema
-        jsonb scoring_rules
-        jsonb red_flags
-    }
-
-    AI_EVALUATION {
-        text id PK
-        text work_log_id FK
-        text employee_id FK
-        text work_type_code
-        text criteria_version
-        jsonb work_data_snapshot
-        jsonb ai_result
-        text status
-        text reviewed_by
-    }
-
-    AI_ALERT {
-        text id PK
-        text ai_evaluation_id FK
-        text employee_id FK
-        text message
-        text status
+        uuid id PK
+        uuid employee_id FK
+        uuid period_id FK
+        uuid criterion_node_id FK
+        string external_id
+        string category
+        string severity
+        string direction
+        numeric score_impact
+        string title
+        uuid reporter_id FK
+        string status
+        timestamp occurred_at
     }
 
     QUALITATIVE_SCORE {
-        text id PK
-        text employee_id FK
-        text evaluator_id FK
-        text version_id FK
-        text question_id
-        text evaluator_role
+        uuid id PK
+        uuid employee_id FK
+        uuid period_id FK
+        uuid criterion_node_id FK
+        uuid evaluator_id FK
+        string evaluator_role
         numeric score
-        date period_from
-        date period_to
+        text comment
+    }
+
+    MANUAL_SCORE {
+        uuid id PK
+        uuid employee_id FK
+        uuid period_id FK
+        uuid criterion_node_id FK
+        numeric score
+        text rationale
+        uuid scored_by FK
+    }
+
+    AI_EVALUATION {
+        uuid id PK
+        uuid employee_id FK
+        uuid period_id FK
+        uuid criterion_node_id FK
+        string external_id
+        jsonb input_data
+        numeric ai_score
+        text ai_reasoning
+        numeric final_score
+        string status
+        uuid reviewed_by FK
     }
 
     SCORECARD_SNAPSHOT {
-        text id PK
-        text employee_id FK
-        text version_id FK
-        date period_from
-        date period_to
-        numeric pillar_1_score
-        numeric pillar_2_score
-        numeric pillar_3_score
+        uuid id PK
+        uuid employee_id FK
+        uuid period_id FK
         numeric total_score
-        text rank
-        text completeness
+        int rank
+        numeric completeness
+        jsonb detail
+        timestamp generated_at
     }
 
     CAMPAIGN {
-        text id PK
-        text name
-        text type
-        text status
-        date period_from
-        date period_to
-        text[] scope_department_ids
-        jsonb goals
-        jsonb awards
+        uuid id PK
+        uuid department_id FK
+        string name
+        string type
+        string status
+        timestamp period_from
+        timestamp period_to
         boolean ending_ritual_done
     }
 
     PEER_RECOGNITION {
-        text id PK
-        text from_employee_id FK
-        text to_employee_id FK
+        uuid id PK
+        uuid from_employee_id FK
+        uuid to_employee_id FK
         text reason
-        text campaign_id FK
-        text generated_event_id FK
+        uuid campaign_id FK
+        uuid generated_event_id FK
     }
+
+    DEPARTMENT ||--o{ EMPLOYEE : "has"
+    DEPARTMENT ||--o{ CRITERION_TREE : "owns versions"
+    DEPARTMENT ||--o{ EVAL_PERIOD : "has"
+    DEPARTMENT ||--o{ CAMPAIGN : "runs"
+
+    CRITERION_TREE ||--o{ CRITERION_NODE : "contains"
+    CRITERION_NODE ||--o{ CRITERION_NODE : "parent/children"
+    CRITERION_TREE ||--o{ EVAL_PERIOD : "used by"
+
+    PRESET_LIBRARY ||--o{ PRESET_NODE : "template nodes"
+    PRESET_NODE ||--o{ PRESET_NODE : "recursive"
+
+    EMPLOYEE ||--o{ WORK_LOG : "logged for"
+    EMPLOYEE ||--o{ EVENT : "recorded for"
+    EMPLOYEE ||--o{ QUALITATIVE_SCORE : "evaluated in"
+    EMPLOYEE ||--o{ MANUAL_SCORE : "scored in"
+    EMPLOYEE ||--o{ AI_EVALUATION : "evaluated in"
+    EMPLOYEE ||--o{ SCORECARD_SNAPSHOT : "has"
+    EMPLOYEE ||--o{ PEER_RECOGNITION : "sends/receives"
+
+    EVAL_PERIOD ||--o{ WORK_LOG : "scopes"
+    EVAL_PERIOD ||--o{ EVENT : "scopes"
+    EVAL_PERIOD ||--o{ QUALITATIVE_SCORE : "scopes"
+    EVAL_PERIOD ||--o{ MANUAL_SCORE : "scopes"
+    EVAL_PERIOD ||--o{ AI_EVALUATION : "scopes"
+    EVAL_PERIOD ||--o{ SCORECARD_SNAPSHOT : "produces"
+
+    CRITERION_NODE ||--o{ WORK_LOG : "quantitative leaf"
+    CRITERION_NODE ||--o{ EVENT : "event leaf (nullable)"
+    CRITERION_NODE ||--o{ QUALITATIVE_SCORE : "360 leaf"
+    CRITERION_NODE ||--o{ MANUAL_SCORE : "manual leaf"
+    CRITERION_NODE ||--o{ AI_EVALUATION : "ai leaf"
+
+    CAMPAIGN ||--o{ PEER_RECOGNITION : "generates"
 ```
 
 ---
 
-## 3. Scoring Pipeline (Luồng tính điểm cuối kỳ)
+## 3. Scoring Pipeline — Tree Traversal
 
 ```mermaid
 flowchart LR
-    subgraph Input["📥 Data Sources"]
-        WL["WorkLogs\n(completedAt trong kỳ)"]
-        QS["QualitativeScores\n(360° form)"]
-        EV["Events\n(status = confirmed)"]
+    subgraph Sources["Nguồn dữ liệu"]
+        WL["📦 WorkLog\n(quantity, score)"]
+        EV["📢 Event\n(confirmed)"]
+        QS["👥 QualitativeScore\n(0-100 per evaluator)"]
+        MS["✏️ ManualScore\n(0-100)"]
+        AI["🤖 AIEvaluation\n(final_score, confirmed)"]
     end
 
-    subgraph Pillars["🏛️ Pillars (N pillars, weight tổng = 100%)"]
-        P1["QUANTITATIVE\ndata_source: quantitative\n─────────────\nwork_points: Σ pointsSnapshot\nwork_count: Σ quantity\nwork_quality: ontime / total × 100"]
-        P2["QUALITY_360\ndata_source: qualitative_360\n─────────────\navg(scores) / 10 × 100\n± điều chỉnh từ events"]
-        P3["FEEDBACK\ndata_source: event_driven\n─────────────\nnet = Σ polarity × severity\nnorm = clamp(50 + net×5, 0, 100)"]
-        PN["... pillar khác\n(SKILL_MASTERY, COMPLIANCE\nLEARNING, INNOVATION)"]
+    subgraph Leaves["Leaf Nodes (đo thực sự)"]
+        LQ["Leaf\neval_type=quantitative\nScore = avg(log.score)"]
+        LE["Leaf\neval_type=event\nScore = 50 + net × factor\nclamped 0-100"]
+        L3["Leaf\neval_type=qualitative_360\nScore = weighted avg\nby evaluator_role"]
+        LM["Leaf\neval_type=manual\nScore = direct"]
+        LA["Leaf\neval_type=ai\nScore = final_score"]
     end
 
-    subgraph Scoring["📊 Tổng hợp"]
-        TOTAL["Total Score\n= Σ (pillar_score × weight) / 100"]
-        RANK["Xếp hạng\nA ≥ 85\nB 70–84\nC 55–69\nD < 55"]
-        SNAP["ScorecardSnapshot\n(lưu cứng cuối kỳ)"]
+    subgraph Folders["Folder Nodes (tổng hợp)"]
+        F1["📁 Folder\nScore = Σ(child.score × child.weight/100)"]
+        F2["📁 Folder\nScore = Σ(child.score × child.weight/100)"]
+        ROOT["📁 Root Nodes\nScore = Σ(root.score × root.weight/100)"]
     end
 
-    WL --> P1
-    QS --> P2
-    EV --> P3
-    EV --> PN
-    QS --> PN
+    OUT["🏆 ScorecardSnapshot\ntotal_score (0-100)\nrank, completeness\ndetail JSONB tree"]
 
-    P1 -->|"× weight%"| TOTAL
-    P2 -->|"× weight%"| TOTAL
-    P3 -->|"× weight%"| TOTAL
-    PN -->|"× weight%"| TOTAL
+    WL --> LQ
+    EV --> LE
+    QS --> L3
+    MS --> LM
+    AI --> LA
 
-    TOTAL --> RANK
-    TOTAL --> SNAP
+    LQ --> F1
+    LE --> F1
+    L3 --> F2
+    LM --> F2
+    LA --> F2
 
-    style Input fill:#FEF3C7,stroke:#D97706
-    style Pillars fill:#EFF6FF,stroke:#3B82F6
-    style Scoring fill:#F0FDF4,stroke:#16A34A
+    F1 --> ROOT
+    F2 --> ROOT
+    ROOT --> OUT
 ```
 
 ---
@@ -311,352 +315,336 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-    participant SRC as CRM/Chat Agent
-    participant API as API Layer
-    participant ENG as AI Eval Engine
-    participant AI as AI API (Claude/GPT)
+    participant CRM as CRM / ERP
+    participant API as Eval API
+    participant ENGINE as AI Evaluation Engine
+    participant AI_API as AI API (Claude / GPT)
     participant DB as Database
-    participant QL as Quản lý (human)
+    participant QL as Quản lý
 
-    SRC->>API: POST /ai-evaluations\n{work_type_code, work_data, employee_id}
-    API->>API: Validate HMAC + rate limit
-
-    API->>DB: Load EvaluationCriteria (active version)
-    DB-->>API: criteria JSON
-
-    API->>API: Validate work_data vs input_schema
-    alt Thiếu required fields
-        API-->>SRC: 422 INSUFFICIENT_DATA
+    CRM->>API: POST /ai-evaluations\n{employee_id, criterion_node_id,\nexternal_id, input_data, source}
+    API->>DB: Check idempotency (external_id, source)
+    alt Duplicate
+        DB-->>API: Already exists
+        API-->>CRM: 200 OK (original record)
+    else New
+        API->>DB: Create ai_evaluation (pending_review)
+        API->>ENGINE: Trigger evaluation
     end
 
-    API->>API: Idempotency check (external_id, source)
-    alt Đã tồn tại
-        API-->>SRC: 200 + existing ai_evaluation_id
+    ENGINE->>DB: Load CriterionNode (eval_type=ai)\nRead description (criteria rules)
+    ENGINE->>ENGINE: Validate input_data vs required fields\nBuild AI prompt from criteria + input_data
+    ENGINE->>AI_API: Call AI API
+    AI_API-->>ENGINE: {score, reasoning, red_flags?}
+    ENGINE->>DB: Update ai_evaluation\n{ai_score, ai_reasoning, ai_model}
+
+    opt Red flag detected
+        ENGINE->>DB: Create ai_alert (human review required)
+        ENGINE->>QL: Notify — red flag on employee
     end
 
-    API->>ENG: Build prompt từ criteria + work_data
-    ENG->>AI: Call AI API
-    AI-->>ENG: {rule_scores, detected_events, red_flags, confidence}
+    QL->>API: GET /ai-evaluations/pending?department_id=
+    API-->>QL: List of pending evaluations
 
-    ENG->>DB: CREATE WorkLog (status=pending_review)
-    ENG->>DB: CREATE Events (status=pending) for detected_events
-    ENG->>DB: CREATE AIEvaluation (status=pending_review)
-    ENG->>DB: CREATE AIAlerts for red_flags
+    QL->>API: POST /ai-evaluations/{id}/confirm\n{reviewed_by}
+    API->>DB: Update status=confirmed\nfinal_score = ai_score
+    DB-->>API: Done
+    API-->>QL: 200 OK
 
-    API-->>SRC: 201 {ai_evaluation_id, work_log_id, ai_result}
-
-    Note over DB,QL: QL review trên dashboard
-
-    QL->>API: POST /ai-evaluations/{id}/confirm
-    API->>DB: UPDATE WorkLog status=confirmed
-    API->>DB: UPDATE Events status=confirmed
-    API->>DB: UPDATE AIEvaluation status=confirmed
-    API-->>QL: {points_applied, events_confirmed}
-
-    Note over DB,QL: Hoặc QL override nếu không đồng ý
-
-    QL->>API: POST /ai-evaluations/{id}/override\n{override_assessment, override_reason}
-    API->>DB: UPDATE với kết quả QL quyết định
-    API->>DB: AuditLog: "overridden by QL"
+    Note over DB,QL: Scorecard engine sẽ đọc final_score\nkhi tính điểm leaf node này
 ```
 
 ---
 
-## 5. State Machines
-
-### 5a. Event (Sự vụ) — Vòng đời
+## 5. State Machine — Event / Sự vụ
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending : Tạo mới\n(CRM, manual, AI detected)
+    [*] --> pending : Tạo mới (POST /events)
 
-    pending --> confirmed : QL xác nhận\n→ tính vào điểm
-    pending --> disputed : QL/NV tranh luận\n→ tạm giữ
+    pending --> confirmed : QL xác nhận\n(POST /events/{id}/confirm)
+    pending --> disputed : NV phản đối\n(POST /events/{id}/dispute)
+    pending --> [*] : Xoá (audit log giữ lại)
 
-    disputed --> confirmed : Giải quyết xong
-    disputed --> deleted : Xác định sai\n→ soft delete
-
-    confirmed --> [*] : Tính vào Pillar 3\n(event_driven)
-    deleted --> [*]
+    confirmed --> disputed : Phát hiện sai sót\n(trong vòng grace period)
+    disputed --> confirmed : Sau review — giữ nguyên
+    disputed --> resolved : Sau review — điều chỉnh\n(score_impact thay đổi)
 
     note right of pending
-        Không tính điểm
+        Chưa tính vào điểm
+        Leaf criterion_node_id\ncó thể null (general event)
     end note
+
     note right of confirmed
-        Tính vào scoring
-        severity_multiplier × polarity
-    end note
-```
-
-### 5b. Version — Vòng đời
-
-```mermaid
-stateDiagram-v2
-    [*] --> draft : Tạo mới\n(hoặc clone từ version cũ)
-
-    draft --> draft : Chỉnh sửa pillars/questions\n(mutable)
-    draft --> published : Publish\n(Σ weights = 100,\nít nhất 1 question/pillar)
-
-    published --> archived : Version mới được publish\n→ version này tự archive
-
-    published --> [*] : Đang dùng để chấm điểm\n(activeVersionId)
-    archived --> [*] : Immutable, giữ lịch sử
-
-    note right of published
-        IMMUTABLE
-        Không sửa pillars/questions
-    end note
-    note right of draft
-        Mutable
-        Có thể sửa tự do
-    end note
-```
-
-### 5c. Campaign — Vòng đời
-
-```mermaid
-stateDiagram-v2
-    [*] --> draft : Admin tạo
-
-    draft --> active : Publish\n(có goal/award,\nperiod.from chưa qua,\nreward_description có)
-
-    active --> completed : Complete\n(ending_ritual_done = true\nBẮT BUỘC)
-    active --> cancelled : Admin cancel
-
-    completed --> [*] : Auto-generate events\ncho winners
-
-    note right of active
-        Cập nhật goals.current\nmỗi 15 phút
-    end note
-    note right of completed
-        ending_ritual_done = false
-        → BỊ CHẶN
-    end note
-```
-
-### 5d. AIEvaluation — Vòng đời
-
-```mermaid
-stateDiagram-v2
-    [*] --> pending_review : AI chấm xong\nWorkLog + Events tạo ở pending
-
-    pending_review --> confirmed : QL đồng ý\n→ WorkLog + Events confirmed\n→ tính điểm
-    pending_review --> overridden : QL không đồng ý\n→ QL nhập kết quả mới\n(bắt buộc có lý do)
-    pending_review --> discarded : QL bỏ qua\n(nhầm người, trùng lặp)
-
-    confirmed --> [*] : Điểm tính vào\nPillar 1 + Pillar 3
-    overridden --> [*] : Điểm theo quyết định QL\nAudit log ghi lại
-    discarded --> [*] : WorkLog bị xoá
-
-    note right of pending_review
-        Auto-confirm sau 7 ngày
-        nếu severity=light
-        VÀ accuracy phase đạt ≥ 90%
+        Tính vào điểm leaf\neval_type=event
+        heavy severity:\nluôn manual review
     end note
 ```
 
 ---
 
-## 6. API Integration Flow (CRM → Eval System)
+## 6. State Machine — CriterionTree Version
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft : POST /criterion-trees\n(tạo mới hoặc clone từ preset)
+
+    draft --> draft : Thêm/sửa/xóa nodes\nvalidate weights
+
+    draft --> active : POST /criterion-trees/{id}/publish\nValidation pass:\n- sibling weights = 100%\n- max depth ≤ 4\n- ít nhất 1 root node
+
+    draft --> [*] : Bỏ draft (xoá)
+
+    active --> archived : Khi version mới publish\n(tự động archive version hiện tại)
+
+    note right of draft
+        Có thể sửa tự do
+        Không dùng để chấm điểm
+    end note
+
+    note right of active
+        Bất biến (immutable)
+        EvalPeriod gắn vào tree này
+        Leaf criteria không đổi
+    end note
+
+    note right of archived
+        Chỉ đọc (lịch sử)
+        Period cũ vẫn tham chiếu
+        dữ liệu không thay đổi
+    end note
+```
+
+---
+
+## 7. State Machine — Campaign
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft : Tạo campaign mới
+
+    draft --> active : Kick-off\n(POST /campaigns/{id}/activate)
+    draft --> [*] : Huỷ trước khi bắt đầu
+
+    active --> completed : Kết thúc + có ending ritual\n(POST /campaigns/{id}/complete\n{ending_ritual_summary})
+    active --> cancelled : Dừng sớm có lý do
+
+    completed --> [*] : Lưu lịch sử vĩnh viễn
+
+    note right of active
+        Tracking tiến độ real-time
+        Widget trên dashboard NV
+        Tối đa 2-3 notifications/tuần
+    end note
+
+    note right of completed
+        ending_ritual_done = true bắt buộc
+        Auto-tạo campaign_reward events\ncho người đoạt giải
+    end note
+```
+
+---
+
+## 8. State Machine — AI Evaluation
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending_review : POST /ai-evaluations\n(AI Engine gửi kết quả)
+
+    pending_review --> confirmed : QL xác nhận\n(POST /confirm)\nfinal_score = ai_score
+
+    pending_review --> overridden : QL sửa điểm\n(POST /override)\nfinal_score = QL input
+
+    pending_review --> discarded : QL từ chối\n(POST /discard)\nKhông tính vào scorecard
+
+    note right of pending_review
+        LUÔN bắt đầu ở đây
+        AI không bao giờ\nauto-confirm
+        heavy severity:\nkhông giới hạn thời gian
+    end note
+
+    note left of confirmed
+        light: auto-confirm\n(sau calibration ≥90%)
+        normal: QL review 48h
+        heavy: manual ALWAYS
+    end note
+```
+
+---
+
+## 9. API Integration Flow — CRM → Eval System
 
 ```mermaid
 sequenceDiagram
-    participant CRM as CRM/ERP
-    participant EVAL as Eval System API
+    participant CRM as CRM / ERP
+    participant API as Eval API
+    participant RESOLVE as Node Resolver
     participant DB as Database
     participant DLQ as Dead Letter Queue
 
-    Note over CRM,EVAL: Bước 1: Đồng bộ nhân viên (1 lần đầu)
-    CRM->>EVAL: POST /employee-mapping\n{employee_external_id, department_code, ...}
-    EVAL->>DB: UPSERT employees
-    EVAL-->>CRM: {internal_id, action: "created"|"updated"}
+    Note over CRM,API: CRM gửi work event (fire-and-forget, non-blocking)
 
-    Note over CRM,EVAL: Bước 2: Báo công việc (real-time)
-    CRM->>EVAL: POST /work-events\n{external_id, job_code, employee_ext_id, status}
-    EVAL->>EVAL: Idempotency check\n(external_id, source)
+    CRM->>API: POST /work-events\n{employee_external_id,\ndepartment_external_id,\nexternal_ref: "LAP_DH",\nexternal_id: "WL-2026-001",\nsource: "crm",\nquantity: 1,\nlogged_at: "..."}
 
-    alt job_code không tồn tại trong catalog
-        EVAL->>DLQ: Enqueue → UNKNOWN_JOB_CODE
-        EVAL-->>CRM: 422 UNKNOWN_JOB_CODE
-    else employee chưa map
-        EVAL-->>CRM: 400 EMPLOYEE_NOT_MAPPED
-    else OK
-        EVAL->>DB: INSERT/UPDATE work_logs\n(points_snapshot tính ngay)
-        EVAL-->>CRM: 201/200 {work_log_id, points_calculated}
+    API->>DB: Check idempotency\n(external_id="WL-2026-001", source="crm")
+
+    alt Duplicate
+        DB-->>API: Exists
+        API-->>CRM: 200 {log_id, status:"already_recorded"}
+    else New
+        API->>RESOLVE: Resolve external_ref "LAP_DH"\nfor department active tree
+        RESOLVE->>DB: SELECT criterion_nodes\nWHERE tree_id = active_tree\nAND external_ref = "LAP_DH"\nAND is_leaf = true
+        alt Node found
+            DB-->>RESOLVE: criterion_node_id = uuid-xyz
+            RESOLVE-->>API: Resolved
+            API->>DB: INSERT work_logs\n{criterion_node_id=uuid-xyz,\nexternal_id, source, quantity,\nscore (computed or from CRM)}
+            API-->>CRM: 201 {log_id, criterion_node_id, score}
+        else Node not found
+            RESOLVE-->>API: UNKNOWN_NODE_REF
+            API->>DLQ: INSERT dead_letter_queue\n{payload, error_code, retry_count=0}
+            API-->>CRM: 422 {error_code:"UNKNOWN_NODE_REF",\nmessage:"external_ref không map được node nào"}
+            Note over DLQ: Admin map lại external_ref\nrồi retry thủ công
+        end
     end
 
-    Note over CRM,EVAL: Bước 3: Báo sự vụ
-    CRM->>EVAL: POST /incidents\n{external_id, category, severity, ...}
-    EVAL->>DB: INSERT events (status=pending)
-    EVAL-->>CRM: 201 {event_id, initial_status: "pending"}
-
-    Note over CRM,EVAL: Bước 4: Lấy bảng điểm
-    CRM->>EVAL: GET /employees/{ext_id}/scorecard\n?period_from=...&period_to=...
-    EVAL->>DB: Query + aggregate
-    EVAL-->>CRM: 200 {work_points, events, scoring, rank}
-    Note right of EVAL: Cache 5 phút\ncache_ttl_seconds trong response
+    Note over API,DB: Scorecard engine\ntính điểm theo batch\nhoặc on-demand
+    CRM->>API: GET /scorecard?employee_id=&period_id=
+    API->>DB: Compute tree traversal\n(leaf scores → folder rollup → total)
+    DB-->>API: {total_score, breakdown tree, completeness}
+    API-->>CRM: 200 {scorecard}
 ```
 
 ---
 
-## 7. Data Flow — Từ nguồn đến Scorecard
+## 10. Data Flow — Từ nguồn đến Scorecard
 
 ```mermaid
 flowchart TD
-    subgraph Sources["📡 Data Producers"]
-        CRM_WE["CRM/ERP\nPOST /work-events"]
-        CRM_INC["CRM/ERP\nPOST /incidents"]
-        AI_EVAL["Chat Agent AI\nPOST /ai-evaluations"]
-        FORM_360["Google Form / Internal\nPOST /qualitative-scores"]
-        PEER["Nhân viên\nPOST /peer-recognitions"]
-        MANUAL_QL["Quản lý\nManual entry"]
+    subgraph Producers["Data Producers"]
+        CRM_P["CRM / ERP\n(tự động)"]
+        QL_P["Quản lý\n(review + manual)"]
+        AI_P["AI Engine\n(pending → confirmed)"]
+        PEER["Đồng nghiệp\n(peer recognition)"]
     end
 
-    subgraph Storage["🗃️ Storage Layer"]
-        WL[("work_logs\npoints_snapshot\nstatus")]
-        EV[("events\nstatus=confirmed\nseverity")]
-        QS[("qualitative_scores\nscore 0-10\nevaluator_role")]
+    subgraph Storage["Leaf Score Tables"]
+        WL_T["work_logs\n(criterion_node_id,\nquantity, score)"]
+        EV_T["events\n(criterion_node_id nullable,\ncategory, severity,\nscore_impact)"]
+        QS_T["qualitative_scores\n(criterion_node_id,\nevaluator_role, score)"]
+        MS_T["manual_scores\n(criterion_node_id,\nscore)"]
+        AI_T["ai_evaluations\n(criterion_node_id,\nfinal_score, confirmed)"]
     end
 
-    subgraph Pillars["🏛️ Pillars"]
-        P_Q["QUANTITATIVE\n▶ Σ points_snapshot\n▶ ontime_rate"]
-        P_360["QUALITY_360\n▶ avg(scores)/10×100"]
-        P_FB["FEEDBACK\n▶ clamp(50+net×5)"]
-        P_OTHER["Other Pillars\nSKILL_MASTERY\nCOMPLIANCE\nINNOVATION..."]
+    subgraph Tree["CriterionTree Rollup"]
+        LEAF["Leaf Nodes\n(0-100 per leaf)"]
+        FOLDER["Folder Nodes\nΣ(child × weight/100)"]
+        ROOT_N["Root Nodes\nΣ(root × weight/100)"]
     end
 
-    subgraph Output["📊 Output"]
-        SNAP["ScorecardSnapshot\ntotal_score\nrank A/B/C/D"]
-        API_OUT["GET /scorecard\n(CRM embed)"]
-    end
+    OUT_S["ScorecardSnapshot\ntotal_score / rank\ncompleteness / detail"]
 
-    CRM_WE -->|"WorkLog"| WL
-    AI_EVAL -->|"WorkLog (pending→confirmed)"| WL
-    CRM_INC -->|"Event (pending→confirmed)"| EV
-    AI_EVAL -->|"Event (pending→confirmed)"| EV
-    PEER -->|"Event teamwork (auto-confirmed)"| EV
-    FORM_360 -->|"QualitativeScore"| QS
-    MANUAL_QL -->|"QualitativeScore"| QS
+    CRM_P --> WL_T
+    CRM_P --> EV_T
+    QL_P --> QS_T
+    QL_P --> MS_T
+    QL_P --> EV_T
+    AI_P --> AI_T
+    AI_P --> EV_T
+    PEER --> EV_T
 
-    WL --> P_Q
-    QS --> P_360
-    EV --> P_FB
-    EV --> P_OTHER
-    QS --> P_OTHER
+    WL_T --> LEAF
+    EV_T --> LEAF
+    QS_T --> LEAF
+    MS_T --> LEAF
+    AI_T --> LEAF
 
-    P_Q -->|"× weight"| SNAP
-    P_360 -->|"× weight"| SNAP
-    P_FB -->|"× weight"| SNAP
-    P_OTHER -->|"× weight"| SNAP
-
-    SNAP --> API_OUT
-
-    style Sources fill:#FEF3C7,stroke:#D97706
-    style Storage fill:#F8FAFC,stroke:#64748B
-    style Pillars fill:#EFF6FF,stroke:#3B82F6
-    style Output fill:#F0FDF4,stroke:#16A34A
+    LEAF --> FOLDER
+    FOLDER --> ROOT_N
+    ROOT_N --> OUT_S
 ```
 
 ---
 
-## 8. Campaign Flow
+## 11. Campaign Flow
 
 ```mermaid
 flowchart LR
-    subgraph Trigger["🎯 Trigger"]
-        ADMIN_C["Admin tạo Campaign\n(type, period, scope, goals/awards)"]
+    subgraph Trigger["Khi nào kích hoạt"]
+        T1["📈 Cao điểm\nvận hành"]
+        T2["🏆 Cột mốc\ncông ty"]
+        T3["💪 Sau giai đoạn\nkhó khăn"]
+        T4["📊 Dữ liệu\nbất thường"]
     end
 
-    subgraph Active["⚡ Campaign Active"]
-        TRACK["Tracking goals\n(mỗi 15 phút)"]
-        WL2["WorkLogs\n(trong scope + period)"]
-        EV2["Events\n(trong scope + period)"]
-        PEER2["PeerRecognitions\n(Recognition Week)"]
-        PROG["GET /campaigns/{id}/progress\n(days_remaining, pace_message)"]
+    subgraph Types["5 Loại Campaign"]
+        C1["Team Goal\nMục tiêu tập thể"]
+        C2["Individual Awards\nGiải thưởng cá nhân"]
+        C3["Recognition Week\nTuần lễ cảm ơn"]
+        C4["Milestone\nCelebration"]
+        C5["Skill Challenge\nThử thách kỹ năng"]
     end
 
-    subgraph Complete["🏁 Complete"]
-        RITUAL["ending_ritual_done = true\n(BẮT BUỘC)"]
-        WINNER["Điền winners\n(individual_awards)"]
-        GEN["Auto-generate Events\ncho winners\n(teamwork/initiative, medium)"]
-        HIST["Events vào hồ sơ NV\n→ tính vào Pillar 3\nkỳ đánh giá tiếp"]
+    subgraph Impact["Tác động"]
+        EV_C["Auto-create Events\ncategory=campaign_reward\nhoặc commendation\ncriterion_node_id = null\n(general event)"]
+        HIST["Ghi vào hồ sơ\nlâu dài của NV"]
+        RITUAL["Ending Ritual\nbắt buộc"]
     end
 
-    ADMIN_C --> TRACK
-    WL2 --> TRACK
-    EV2 --> TRACK
-    PEER2 -->|"auto Event teamwork"| EV2
-    TRACK --> PROG
+    T1 & T2 & T3 & T4 --> Types
+    C1 & C2 & C3 & C4 & C5 --> EV_C
+    EV_C --> HIST
+    Types --> RITUAL
 
-    PROG --> RITUAL
-    RITUAL --> WINNER
-    WINNER --> GEN
-    GEN --> HIST
-
-    style Trigger fill:#FEF3C7,stroke:#D97706
-    style Active fill:#EFF6FF,stroke:#3B82F6
-    style Complete fill:#F0FDF4,stroke:#16A34A
+    style C1 fill:#DBEAFE
+    style C2 fill:#F0FDF4
+    style C3 fill:#FEF9C3
+    style C4 fill:#FDF4FF
+    style C5 fill:#FFF7ED
 ```
 
 ---
 
-## 9. Template & Pillar Library — Quan hệ chọn pillar
+## 12. CriterionTree & Preset Library
 
 ```mermaid
 graph LR
-    subgraph Library["🏗️ Standard Pillar Library (Org-level)"]
-        PL1["QUANTITATIVE\nquantitative\n★ standard"]
-        PL2["QUALITY_360\nqualitative_360\n★ standard"]
-        PL3["FEEDBACK\nevent_driven\n★ standard"]
-        PL4["SKILL_MASTERY\nqualitative_360"]
-        PL5["COMPLIANCE\nevent_driven"]
-        PL6["LEARNING\nmanual"]
-        PL7["INNOVATION\nevent_driven"]
+    subgraph Presets["Preset Library (tuỳ chọn)"]
+        PL["📚 Preset Library\n(gợi ý theo loại phòng)"]
+        P_GH["Giao hàng preset"]
+        P_KHO["Kho preset"]
+        P_BH["Bán hàng preset"]
+        P_KT["Kế toán preset"]
+        PL --> P_GH & P_KHO & P_BH & P_KT
     end
 
-    subgraph Dept1["Phòng Giao hàng"]
-        T1["Template v1.2\nQUANTITATIVE 50%\nQUALITY_360 30%\nFEEDBACK 20%"]
+    subgraph Trees["CriterionTree theo Phòng"]
+        T_GH["📁 Phòng Giao hàng\nCriterionTree v2 (active)"]
+        T_KHO["📁 Phòng Kho\nCriterionTree v1 (active)"]
+        T_NEW["📁 Phòng mới\nCriterionTree v1 (draft)"]
     end
 
-    subgraph Dept2["Đội An toàn lao động"]
-        T2["Template v1.0\nCOMPLIANCE 60%\nQUALITY_360 40%"]
+    subgraph Nodes["CriterionNode (ví dụ Giao hàng)"]
+        N1["📁 Kết quả (50%)\nis_leaf=false"]
+        N1A["📄 Số chuyến (30%)\neval_type=quantitative\nexternal_ref=CHUYEN"]
+        N1B["📄 Tỷ lệ đúng hạn (40%)\neval_type=quantitative\nexternal_ref=ONTIME"]
+        N1C["📄 Giao đúng địa chỉ (30%)\neval_type=quantitative"]
+        N2["📁 Chất lượng (30%)\nis_leaf=false"]
+        N2A["📄 Phản hồi khách (50%)\neval_type=event"]
+        N2B["📄 QL đánh giá (50%)\neval_type=qualitative_360"]
+        N3["📄 Tuân thủ (20%)\neval_type=manual"]
     end
 
-    subgraph Dept3["Đội Kỹ thuật Bảo hành"]
-        T3["Template v2.0\nQUANTITATIVE 35%\nSKILL_MASTERY 25%\nQUALITY_360 25%\nFEEDBACK 15%"]
-    end
+    P_GH -->|"clone → draft\n(nodes sao chép,\nkhông còn liên kết)"| T_GH
+    P_KHO -->|"clone → draft"| T_KHO
+    T_NEW -->|"xây từ đầu\n(không cần preset)"| T_NEW
 
-    PL1 --> T1
-    PL2 --> T1
-    PL3 --> T1
+    T_GH --> N1
+    N1 --> N1A & N1B & N1C
+    T_GH --> N2
+    N2 --> N2A & N2B
+    T_GH --> N3
 
-    PL5 --> T2
-    PL2 --> T2
-
-    PL1 --> T3
-    PL4 --> T3
-    PL2 --> T3
-    PL3 --> T3
-
-    style Library fill:#FEF3C7,stroke:#D97706
-    style Dept1 fill:#EFF6FF,stroke:#3B82F6
-    style Dept2 fill:#FEF2F2,stroke:#EF4444
-    style Dept3 fill:#F0FDF4,stroke:#16A34A
+    style Presets fill:#FEF3C7,stroke:#D97706
+    style Trees fill:#EFF6FF,stroke:#3B82F6
+    style Nodes fill:#F0FDF4,stroke:#22C55E
 ```
-
----
-
-## Ghi chú đọc diagram
-
-| Ký hiệu ERD | Nghĩa |
-|-------------|-------|
-| `\|\|--o{` | 1 bắt buộc — N tùy chọn |
-| `\|o--o\|` | 0..1 — 0..1 |
-| `\|\|--\|\|` | 1 — 1 bắt buộc |
-
-| Màu sắc | Tầng |
-|---------|------|
-| 🟡 Vàng | External systems / Data producers |
-| 🔵 Xanh dương | Core engine / Pillars |
-| 🟢 Xanh lá | Output / Result |
-| ⚪ Xám | Storage / Database |

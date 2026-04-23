@@ -214,6 +214,111 @@ Mẫu thông báo cho nhân viên:
 
 ---
 
+## Cách hệ thống "suy nghĩ" khi phân tích 3 kỳ — dành cho người không làm kỹ thuật
+
+> Phần này giải thích thuật toán bằng ngôn ngữ đời thường. Không có code, không có công thức.
+
+### Hình dung đơn giản: chiếc cân cần chỉnh
+
+Khi bạn mua một chiếc cân mới về, lần đầu bạn đặt 1kg lên — cân có thể chỉ 1.2kg. Không phải cân sai vĩnh viễn, chỉ là cần **hiệu chỉnh lại**. Hệ thống đánh giá cũng vậy: lần đầu triển khai, mục tiêu đặt ra là ước tính. Sau vài tháng có dữ liệu thực, hệ thống sẽ "nhìn lại" và đề xuất chỉnh cho đúng hơn.
+
+---
+
+### Hệ thống làm gì với 3 tháng dữ liệu?
+
+Hãy tưởng tượng bạn là quản lý phòng Giao hàng, và bạn có bảng điểm của 12 nhân viên trong 3 tháng thử nghiệm vừa rồi.
+
+**Bước 1 — Nhìn vào từng tháng, đặt câu hỏi đơn giản:**
+
+Với tiêu chí "Số chuyến giao", hệ thống hỏi:
+
+> *"Tháng này, bao nhiêu người đạt điểm rất cao (≥90/100)? Bao nhiêu người điểm rất thấp (dưới 50/100)?"*
+
+Nếu câu trả lời là **"gần như tất cả đều ≥90"** → mục tiêu đang đặt quá dễ, như thi mà ai cũng đỗ thì đề thi vô nghĩa.
+
+Nếu câu trả lời là **"hơn nửa số người dưới 50"** → mục tiêu đang đặt quá khó, như thi mà ai cũng rớt thì đề thi cũng vô nghĩa.
+
+**Bước 2 — Kiểm tra xem có phải "chuyện tháng đó thôi" không:**
+
+Một tháng bất thường không đủ để kết luận. Hệ thống xem cả 3 tháng:
+
+- Nếu **chỉ 1 tháng** bất thường → có thể do dịp lễ, nhân sự biến động. Hệ thống **bỏ qua**, không đề xuất gì.
+- Nếu **2 hoặc 3 tháng** cùng có vấn đề → đây là xu hướng thật. Hệ thống **đề xuất điều chỉnh**.
+
+Mức độ tự tin:
+- 2/3 tháng cùng có vấn đề → "có thể cần chỉnh" (tự tin 67%)
+- 3/3 tháng cùng có vấn đề → "chắc chắn cần chỉnh" (tự tin 100%)
+
+**Bước 3 — Hỏi thêm: "Tình hình đang tự cải thiện không?"**
+
+Hệ thống so sánh điểm trung bình của tháng 1 và tháng 3:
+
+- Nếu điểm đang tăng dần tự nhiên qua 3 tháng → nhân viên đang tự thích nghi, cần **điều chỉnh ít thôi** để không làm họ nản.
+- Nếu điểm ổn định không đổi → vấn đề không tự giải quyết, cần **điều chỉnh mạnh hơn**.
+
+**Bước 4 — Tính con số cụ thể cần thay đổi:**
+
+Hệ thống tính toán và đưa ra một con số điều chỉnh. Ví dụ cụ thể:
+
+| Tình huống quan sát được | Hệ thống đề xuất |
+|--------------------------|-----------------|
+| 3 tháng liên tiếp >90% nhân viên đạt ≥90 điểm, điểm ổn định | Tăng mục tiêu lên +50% |
+| 2 tháng >80% nhân viên đạt ≥90 điểm, điểm ổn định | Tăng mục tiêu lên +30% |
+| 3 tháng >90% nhân viên đạt ≥90 điểm, nhưng điểm đang giảm dần | Tăng mục tiêu lên +13% thôi (đang tự điều chỉnh) |
+| 3 tháng >70% nhân viên dưới 50 điểm, điểm ổn định | Giảm mục tiêu xuống -40% |
+| 2 tháng >50% nhân viên dưới 50 điểm, điểm đang tăng dần | Giảm mục tiêu xuống -8% thôi (đang tự cải thiện) |
+
+---
+
+### Ví dụ từ đầu đến cuối — Phòng Giao hàng
+
+**Dữ liệu 3 tháng thử nghiệm, tiêu chí "Số chuyến giao":**
+
+| | Tháng 2 | Tháng 3 | Tháng 4 |
+|-|---------|---------|---------|
+| Điểm trung bình | 95.1 | 94.8 | 96.2 |
+| % nhân viên đạt ≥90 | 91% | 88% | 94% |
+| % nhân viên dưới 50 | 0% | 0% | 0% |
+| Nhận xét | Quá dễ | Quá dễ | Quá dễ |
+
+**Hệ thống suy luận:**
+
+> "Cả 3 tháng đều có >80% nhân viên đạt ≥90 điểm. Tự tin 100%. Điểm trung bình tháng 4 (96.2) gần bằng tháng 2 (95.1) — không có xu hướng tự cải thiện, tình hình ổn định. Mục tiêu hiện tại (150 điểm công) quá dễ. Đề xuất tăng lên +30% → 195 điểm công (làm tròn 200)."
+
+**Kết quả hiển thị cho quản lý:**
+
+```
+Tiêu chí:    Số chuyến giao
+Vấn đề:      Mục tiêu quá thấp — 3/3 tháng hầu hết nhân viên đạt tối đa
+Đề xuất:     Tăng mục tiêu từ 150 → 200 điểm công/tháng
+Tự tin:      Cao (3/3 tháng đều thấy vấn đề)
+Xu hướng:    Ổn định (không tự cải thiện)
+Lý do:       Khi ai cũng đạt 95+/100, điểm số không còn phân biệt
+             được ai làm tốt hơn ai. Thước đo mất ý nghĩa.
+```
+
+**Quản lý quyết định:**
+
+- "Đồng ý tăng lên 200" → chấp nhận đề xuất
+- "Tôi muốn tăng lên 180 thôi vì team mới tuyển thêm người mới" → ghi đè giá trị
+- "Bỏ qua tiêu chí này — tháng tới có thay đổi quy trình" → bỏ qua
+
+Sau khi quản lý chọn xong → bấm **"Tạo phiên bản mới"** → hệ thống tự động tạo bản nháp với các thay đổi đã chọn. Quản lý xem lại lần cuối rồi kích hoạt.
+
+---
+
+### Điều hệ thống KHÔNG làm
+
+Để tránh hiểu nhầm:
+
+- **Không tự động kích hoạt** — manager phải bấm nút mới chạy phân tích
+- **Không tự áp dụng** — dù đề xuất rõ ràng đến đâu, manager vẫn phải bấm "Tạo phiên bản mới"
+- **Không thay đổi điểm cũ** — các tháng đã tính xong không bị ảnh hưởng
+- **Không đề xuất thay trọng số** — trọng số (cái gì quan trọng hơn cái gì) phụ thuộc vào chiến lược kinh doanh, máy không biết được
+- **Không chạy nếu chưa đủ 3 tháng** — dữ liệu ít hơn không đủ để kết luận
+
+---
+
 ## Phân tích tự động 3 kỳ — Calibration Proposal
 
 Thay vì tự đọc Distribution Analysis và điều chỉnh thủ công, manager có thể bấm nút để hệ thống phân tích 3 kỳ calibration gần nhất và sinh ra **đề xuất cụ thể** (CalibrationProposal).
